@@ -7,6 +7,7 @@ import com.iadanza.profpublicationsapp.domain.model.CitingDocument;
 import com.iadanza.profpublicationsapp.domain.model.Publication;
 import com.iadanza.profpublicationsapp.infrastructure.connector.ScholarConnector;
 import com.iadanza.profpublicationsapp.infrastructure.connector.ScopusConnector;
+import com.iadanza.profpublicationsapp.infrastructure.persistence.CitationCacheRepository;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -15,32 +16,33 @@ import java.util.Map;
 
 /**
  * Implementazione base del servizio citazionale.
- * In questa fase usa una cache in memoria e fake connector.
+ * In questa fase usa una cache persistente su SQLite.
  */
 public class DefaultCitationService implements CitationService {
 
     private final ScopusConnector scopusConnector;
     private final ScholarConnector scholarConnector;
+    private final CitationCacheRepository citationCacheRepository;
 
-    private final Map<String, CitationSummary> citationSummaryCache = new LinkedHashMap<>();
-    private final Map<String, List<CitingDocument>> citingDocumentsCache = new LinkedHashMap<>();
-
-    public DefaultCitationService(ScopusConnector scopusConnector, ScholarConnector scholarConnector) {
+    public DefaultCitationService(
+            ScopusConnector scopusConnector,
+            ScholarConnector scholarConnector,
+            CitationCacheRepository citationCacheRepository
+    ) {
         this.scopusConnector = scopusConnector;
         this.scholarConnector = scholarConnector;
+        this.citationCacheRepository = citationCacheRepository;
     }
 
     @Override
     public CitationSummary getCachedCitationSummary(Publication publication) {
-        return citationSummaryCache.getOrDefault(
-                buildPublicationKey(publication),
-                new CitationSummary(null, null, null)
-        );
+        return citationCacheRepository.findCitationSummary(publication)
+                .orElse(new CitationSummary(null, null, null));
     }
 
     @Override
     public List<CitingDocument> getCachedCitingDocuments(Publication publication) {
-        return citingDocumentsCache.getOrDefault(buildPublicationKey(publication), List.of());
+        return citationCacheRepository.findCitingDocuments(publication);
     }
 
     @Override
@@ -50,15 +52,12 @@ public class DefaultCitationService implements CitationService {
 
         Integer scopusCount = scopusSummary != null ? scopusSummary.scopusCitationCount() : null;
         Integer scholarCount = scholarSummary != null ? scholarSummary.scholarCitationCount() : null;
-
-        Integer total = null;
-        if (scopusCount != null || scholarCount != null) {
-            total = (scopusCount != null ? scopusCount : 0)
-                    + (scholarCount != null ? scholarCount : 0);
-        }
+        Integer total = computeTotal(scopusCount, scholarCount);
 
         CitationSummary merged = new CitationSummary(scopusCount, scholarCount, total);
-        citationSummaryCache.put(buildPublicationKey(publication), merged);
+        List<CitingDocument> existingDocuments = getCachedCitingDocuments(publication);
+
+        citationCacheRepository.saveCitationData(publication, merged, existingDocuments);
         return merged;
     }
 
@@ -68,7 +67,9 @@ public class DefaultCitationService implements CitationService {
         List<CitingDocument> scholarDocs = scholarConnector.findCitingDocuments(publication);
 
         List<CitingDocument> merged = mergeAndDeduplicateDocuments(scopusDocs, scholarDocs);
-        citingDocumentsCache.put(buildPublicationKey(publication), merged);
+        CitationSummary existingSummary = getCachedCitationSummary(publication);
+
+        citationCacheRepository.saveCitationData(publication, existingSummary, merged);
         return merged;
     }
 
@@ -81,7 +82,7 @@ public class DefaultCitationService implements CitationService {
         Integer total = computeTotal(scopusCount, scholarCount);
 
         CitationSummary updated = new CitationSummary(scopusCount, scholarCount, total);
-        citationSummaryCache.put(buildPublicationKey(publication), updated);
+        citationCacheRepository.saveCitationData(publication, updated, getCachedCitingDocuments(publication));
         return updated;
     }
 
@@ -94,7 +95,7 @@ public class DefaultCitationService implements CitationService {
         Integer total = computeTotal(scopusCount, scholarCount);
 
         CitationSummary updated = new CitationSummary(scopusCount, scholarCount, total);
-        citationSummaryCache.put(buildPublicationKey(publication), updated);
+        citationCacheRepository.saveCitationData(publication, updated, getCachedCitingDocuments(publication));
         return updated;
     }
 
@@ -107,7 +108,7 @@ public class DefaultCitationService implements CitationService {
         List<CitingDocument> refreshed = scopusConnector.findCitingDocuments(publication);
         List<CitingDocument> merged = mergeAndDeduplicateDocuments(preserved, refreshed);
 
-        citingDocumentsCache.put(buildPublicationKey(publication), merged);
+        citationCacheRepository.saveCitationData(publication, getCachedCitationSummary(publication), merged);
         return merged;
     }
 
@@ -120,7 +121,7 @@ public class DefaultCitationService implements CitationService {
         List<CitingDocument> refreshed = scholarConnector.findCitingDocuments(publication);
         List<CitingDocument> merged = mergeAndDeduplicateDocuments(preserved, refreshed);
 
-        citingDocumentsCache.put(buildPublicationKey(publication), merged);
+        citationCacheRepository.saveCitationData(publication, getCachedCitationSummary(publication), merged);
         return merged;
     }
 
@@ -147,30 +148,14 @@ public class DefaultCitationService implements CitationService {
         return new ArrayList<>(merged.values());
     }
 
-    private String buildPublicationKey(Publication publication) {
-        if (publication.doi() != null && !publication.doi().isBlank()) {
-            return "DOI:" + publication.doi().toLowerCase().trim();
-        }
-
-        return "META:"
-                + normalize(publication.title())
-                + "|"
-                + (publication.year() != null ? publication.year() : 0);
-    }
-
     private String buildCitingDocumentKey(CitingDocument document) {
         if (document.doi() != null && !document.doi().isBlank()) {
-            return "DOI:" + document.doi().toLowerCase().trim();
+            return "doi:" + document.doi().toLowerCase().trim();
         }
 
-        return document.sourceType()
-                + "|"
-                + normalize(document.title())
-                + "|"
-                + (document.year() != null ? document.year() : 0);
-    }
+        String title = document.title() != null ? document.title().toLowerCase().trim() : "";
+        int year = document.year() != null ? document.year() : 0;
 
-    private String normalize(String value) {
-        return value == null ? "" : value.toLowerCase().trim();
+        return document.sourceType() + "|" + title + "|" + year;
     }
 }

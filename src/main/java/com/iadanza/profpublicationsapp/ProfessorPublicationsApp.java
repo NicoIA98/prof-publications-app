@@ -21,7 +21,9 @@ import com.iadanza.profpublicationsapp.infrastructure.connector.ScopusConnector;
 import com.iadanza.profpublicationsapp.infrastructure.connector.fake.FakeIrisConnector;
 import com.iadanza.profpublicationsapp.infrastructure.connector.fake.FakeScholarConnector;
 import com.iadanza.profpublicationsapp.infrastructure.connector.fake.FakeScopusConnector;
+import com.iadanza.profpublicationsapp.infrastructure.persistence.CitationCacheRepository;
 import com.iadanza.profpublicationsapp.infrastructure.persistence.PublicationCacheRepository;
+import com.iadanza.profpublicationsapp.infrastructure.persistence.SqliteCitationCacheRepository;
 import com.iadanza.profpublicationsapp.infrastructure.persistence.SqlitePublicationCacheRepository;
 import javafx.application.Application;
 import javafx.beans.property.ReadOnlyObjectWrapper;
@@ -65,7 +67,7 @@ import java.util.Optional;
  * - dettaglio pubblicazione
  * - citazioni e documenti citanti
  * - BibTeX richiamabile da ogni riga della tabella
- * - cache pubblicazioni persistita su SQLite
+ * - cache pubblicazioni e citazioni persistita su SQLite
  */
 public class ProfessorPublicationsApp extends Application {
 
@@ -99,12 +101,15 @@ public class ProfessorPublicationsApp extends Application {
         PublicationCacheRepository publicationCacheRepository =
                 new SqlitePublicationCacheRepository("jdbc:sqlite:prof-publications.db");
 
+        CitationCacheRepository citationCacheRepository =
+                new SqliteCitationCacheRepository("jdbc:sqlite:prof-publications.db");
+
         this.professorSearchService = new DefaultProfessorSearchService(irisConnector);
         this.publicationCatalogService =
                 new DefaultPublicationCatalogService(irisConnector, publicationCacheRepository);
 
         DefaultCitationService defaultCitationService =
-                new DefaultCitationService(scopusConnector, scholarConnector);
+                new DefaultCitationService(scopusConnector, scholarConnector, citationCacheRepository);
 
         this.citationService = defaultCitationService;
         this.citationRefreshService =
