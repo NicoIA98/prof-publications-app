@@ -27,6 +27,7 @@ import javafx.beans.property.ReadOnlyStringWrapper;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.geometry.Insets;
+import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
@@ -39,12 +40,18 @@ import javafx.scene.control.TableCell;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
 import javafx.scene.control.TextArea;
+import javafx.scene.input.Clipboard;
+import javafx.scene.input.ClipboardContent;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
+import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.util.List;
 import java.util.Optional;
 
@@ -395,21 +402,78 @@ public class ProfessorPublicationsApp extends Application {
         }
 
         BibtexEntry bibtexEntry = result.get();
-
         updateStatus("BibTeX ottenuto da sorgente: " + bibtexEntry.sourceType() + ".");
 
         Dialog<Void> dialog = new Dialog<>();
         dialog.setTitle("BibTeX - " + publication.title());
         dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
+        dialog.setResizable(true);
 
         TextArea bibtexArea = new TextArea(bibtexEntry.rawBibtex());
         bibtexArea.setEditable(false);
         bibtexArea.setWrapText(true);
         bibtexArea.setPrefSize(700, 350);
 
-        dialog.getDialogPane().setContent(bibtexArea);
-        dialog.setResizable(true);
+        Button copyButton = new Button("Copia BibTeX");
+        copyButton.setOnAction(event -> copyBibtexToClipboard(bibtexEntry.rawBibtex()));
+
+        Button saveButton = new Button("Salva .bib");
+        saveButton.setOnAction(event -> saveBibtexToFile(bibtexEntry));
+
+        HBox actionBar = new HBox(10, copyButton, saveButton);
+        actionBar.setAlignment(Pos.CENTER_LEFT);
+
+        VBox dialogContent = new VBox(10, bibtexArea, actionBar);
+        dialogContent.setPadding(new Insets(10));
+        VBox.setVgrow(bibtexArea, Priority.ALWAYS);
+
+        dialog.getDialogPane().setContent(dialogContent);
         dialog.showAndWait();
+    }
+
+    private void copyBibtexToClipboard(String bibtexText) {
+        ClipboardContent content = new ClipboardContent();
+        content.putString(bibtexText);
+        Clipboard.getSystemClipboard().setContent(content);
+        updateStatus("BibTeX copiato negli appunti.");
+    }
+
+    private void saveBibtexToFile(BibtexEntry bibtexEntry) {
+        FileChooser fileChooser = new FileChooser();
+        fileChooser.setTitle("Salva file BibTeX");
+        fileChooser.getExtensionFilters().add(
+                new FileChooser.ExtensionFilter("BibTeX files (*.bib)", "*.bib")
+        );
+
+        String suggestedFileName = bibtexEntry.citationKey() != null && !bibtexEntry.citationKey().isBlank()
+                ? bibtexEntry.citationKey() + ".bib"
+                : "citation.bib";
+
+        fileChooser.setInitialFileName(suggestedFileName);
+
+        Stage currentStage = (Stage) publicationsTable.getScene().getWindow();
+        File selectedFile = fileChooser.showSaveDialog(currentStage);
+
+        if (selectedFile == null) {
+            updateStatus("Salvataggio BibTeX annullato.");
+            return;
+        }
+
+        try {
+            Files.writeString(selectedFile.toPath(), bibtexEntry.rawBibtex());
+            updateStatus("BibTeX salvato in: " + selectedFile.getAbsolutePath());
+        } catch (IOException e) {
+            updateStatus("Errore durante il salvataggio del file BibTeX.");
+            showErrorAlert("Errore salvataggio file", "Impossibile salvare il file .bib selezionato.");
+        }
+    }
+
+    private void showErrorAlert(String title, String message) {
+        Alert alert = new Alert(Alert.AlertType.ERROR);
+        alert.setTitle(title);
+        alert.setHeaderText(null);
+        alert.setContentText(message);
+        alert.showAndWait();
     }
 
     private void showProfessorDetails(Professor professor) {
