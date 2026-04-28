@@ -19,11 +19,22 @@ import com.iadanza.profpublicationsapp.infrastructure.connector.fake.FakeIrisCon
 import com.iadanza.profpublicationsapp.infrastructure.connector.fake.FakeScholarConnector;
 import com.iadanza.profpublicationsapp.infrastructure.connector.fake.FakeScopusConnector;
 import javafx.application.Application;
+import javafx.beans.property.ReadOnlyObjectWrapper;
+import javafx.beans.property.ReadOnlyStringWrapper;
+import javafx.collections.FXCollections;
+import javafx.collections.ObservableList;
 import javafx.geometry.Insets;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
+import javafx.scene.control.Label;
+import javafx.scene.control.SelectionMode;
+import javafx.scene.control.SplitPane;
+import javafx.scene.control.TableColumn;
+import javafx.scene.control.TableView;
 import javafx.scene.control.TextArea;
+import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
 
@@ -31,10 +42,8 @@ import java.util.List;
 
 /**
  * Classe principale dell'applicazione JavaFX.
- * In questa fase iniziale mostra un flusso minimo funzionante:
- * ricerca di un professore mock da IRIS, refresh manuale
- * delle pubblicazioni canoniche da IRIS e refresh manuale
- * degli indici citazionali da Scopus e Scholar.
+ * Questa versione usa una pagina unica con sezioni fisse:
+ * dati del professore, tabella pubblicazioni e dettaglio con citazioni.
  */
 public class ProfessorPublicationsApp extends Application {
 
@@ -44,7 +53,19 @@ public class ProfessorPublicationsApp extends Application {
     private CitationRefreshService citationRefreshService;
 
     private Professor selectedProfessor;
-    private TextArea outputArea;
+
+    private final ObservableList<Publication> publicationItems = FXCollections.observableArrayList();
+
+    private Label professorNameValue;
+    private Label professorAffiliationValue;
+    private TextArea professorIdentifiersArea;
+
+    private TableView<Publication> publicationsTable;
+
+    private TextArea publicationDetailsArea;
+    private TextArea citationDetailsArea;
+
+    private Label statusLabel;
 
     @Override
     public void start(Stage stage) {
@@ -62,6 +83,25 @@ public class ProfessorPublicationsApp extends Application {
         this.citationRefreshService =
                 new DefaultCitationRefreshService(publicationCatalogService, defaultCitationService);
 
+        BorderPane root = new BorderPane();
+        root.setPadding(new Insets(15));
+
+        root.setTop(buildTopBar());
+        root.setCenter(buildMainContent());
+        root.setBottom(buildStatusBar());
+
+        resetProfessorSection();
+        resetPublicationDetails();
+        resetCitationDetails();
+        updateStatus("Applicazione avviata. Cerca il professore demo per iniziare.");
+
+        Scene scene = new Scene(root, 1250, 780);
+        stage.setTitle("Professor Publications App");
+        stage.setScene(scene);
+        stage.show();
+    }
+
+    private HBox buildTopBar() {
         Button searchProfessorButton = new Button("Cerca demo professore");
         Button refreshPublicationsButton = new Button("Refresh pubblicazioni da IRIS");
         Button refreshCitationsButton = new Button("Refresh indici Scopus e Scholar");
@@ -70,46 +110,216 @@ public class ProfessorPublicationsApp extends Application {
         refreshPublicationsButton.setOnAction(event -> refreshProfessorPublications());
         refreshCitationsButton.setOnAction(event -> refreshCitationData());
 
-        HBox buttonBar = new HBox(10, searchProfessorButton, refreshPublicationsButton, refreshCitationsButton);
+        HBox topBar = new HBox(10, searchProfessorButton, refreshPublicationsButton, refreshCitationsButton);
+        topBar.setPadding(new Insets(0, 0, 15, 0));
+        return topBar;
+    }
 
-        outputArea = new TextArea();
-        outputArea.setEditable(false);
-        outputArea.setWrapText(true);
-        outputArea.setPrefRowCount(25);
-        outputArea.setText("""
-                Applicazione avviata.
-                Premi "Cerca demo professore" per caricare Mario Rossi.
-                """);
+    private SplitPane buildMainContent() {
+        VBox professorPane = buildProfessorPane();
+        VBox publicationsPane = buildPublicationsPane();
+        VBox detailsPane = buildDetailsPane();
 
-        VBox root = new VBox(15, buttonBar, outputArea);
-        root.setPadding(new Insets(20));
+        SplitPane splitPane = new SplitPane(professorPane, publicationsPane, detailsPane);
+        splitPane.setDividerPositions(0.24, 0.62);
+        return splitPane;
+    }
 
-        Scene scene = new Scene(root, 1100, 750);
+    private VBox buildProfessorPane() {
+        Label sectionTitle = new Label("Professore");
+        sectionTitle.setStyle("-fx-font-size: 16px; -fx-font-weight: bold;");
 
-        stage.setTitle("Professor Publications App");
-        stage.setScene(scene);
-        stage.show();
+        Label nameLabel = new Label("Nome:");
+        professorNameValue = new Label("-");
+
+        Label affiliationLabel = new Label("Affiliazione:");
+        professorAffiliationValue = new Label("-");
+
+        Label identifiersLabel = new Label("Identificativi:");
+        professorIdentifiersArea = new TextArea();
+        professorIdentifiersArea.setEditable(false);
+        professorIdentifiersArea.setWrapText(true);
+        professorIdentifiersArea.setPrefRowCount(12);
+
+        VBox professorPane = new VBox(8,
+                sectionTitle,
+                nameLabel, professorNameValue,
+                affiliationLabel, professorAffiliationValue,
+                identifiersLabel, professorIdentifiersArea
+        );
+        professorPane.setPadding(new Insets(10));
+        VBox.setVgrow(professorIdentifiersArea, Priority.ALWAYS);
+        return professorPane;
+    }
+
+    private VBox buildPublicationsPane() {
+        Label sectionTitle = new Label("Pubblicazioni IRIS");
+        sectionTitle.setStyle("-fx-font-size: 16px; -fx-font-weight: bold;");
+
+        publicationsTable = new TableView<>();
+        publicationsTable.getSelectionModel().setSelectionMode(SelectionMode.SINGLE);
+        publicationsTable.setItems(publicationItems);
+
+        TableColumn<Publication, String> titleColumn = new TableColumn<>("Titolo");
+        titleColumn.setCellValueFactory(cellData ->
+                new ReadOnlyStringWrapper(cellData.getValue().title())
+        );
+        titleColumn.setPrefWidth(320);
+
+        TableColumn<Publication, Integer> yearColumn = new TableColumn<>("Anno");
+        yearColumn.setCellValueFactory(cellData ->
+                new ReadOnlyObjectWrapper<>(cellData.getValue().year())
+        );
+        yearColumn.setPrefWidth(70);
+
+        TableColumn<Publication, String> venueColumn = new TableColumn<>("Venue");
+        venueColumn.setCellValueFactory(cellData ->
+                new ReadOnlyStringWrapper(
+                        cellData.getValue().venue() != null ? cellData.getValue().venue() : ""
+                )
+        );
+        venueColumn.setPrefWidth(220);
+
+        TableColumn<Publication, String> doiColumn = new TableColumn<>("DOI");
+        doiColumn.setCellValueFactory(cellData ->
+                new ReadOnlyStringWrapper(
+                        cellData.getValue().doi() != null ? cellData.getValue().doi() : "N/D"
+                )
+        );
+        doiColumn.setPrefWidth(170);
+
+        publicationsTable.getColumns().addAll(titleColumn, yearColumn, venueColumn, doiColumn);
+
+        publicationsTable.getSelectionModel().selectedItemProperty().addListener((obs, oldValue, newValue) -> {
+            if (newValue != null) {
+                showPublicationDetails(newValue);
+                showCitationDetails(newValue);
+            } else {
+                resetPublicationDetails();
+                resetCitationDetails();
+            }
+        });
+
+        VBox publicationsPane = new VBox(8, sectionTitle, publicationsTable);
+        publicationsPane.setPadding(new Insets(10));
+        VBox.setVgrow(publicationsTable, Priority.ALWAYS);
+        return publicationsPane;
+    }
+
+    private VBox buildDetailsPane() {
+        Label publicationTitle = new Label("Dettaglio pubblicazione");
+        publicationTitle.setStyle("-fx-font-size: 16px; -fx-font-weight: bold;");
+
+        publicationDetailsArea = new TextArea();
+        publicationDetailsArea.setEditable(false);
+        publicationDetailsArea.setWrapText(true);
+        publicationDetailsArea.setPrefRowCount(12);
+
+        Label citationTitle = new Label("Citazioni e documenti citanti");
+        citationTitle.setStyle("-fx-font-size: 16px; -fx-font-weight: bold;");
+
+        citationDetailsArea = new TextArea();
+        citationDetailsArea.setEditable(false);
+        citationDetailsArea.setWrapText(true);
+        citationDetailsArea.setPrefRowCount(16);
+
+        VBox detailsPane = new VBox(8,
+                publicationTitle,
+                publicationDetailsArea,
+                citationTitle,
+                citationDetailsArea
+        );
+        detailsPane.setPadding(new Insets(10));
+
+        VBox.setVgrow(publicationDetailsArea, Priority.ALWAYS);
+        VBox.setVgrow(citationDetailsArea, Priority.ALWAYS);
+
+        return detailsPane;
+    }
+
+    private HBox buildStatusBar() {
+        statusLabel = new Label("Stato applicazione");
+        HBox statusBar = new HBox(statusLabel);
+        statusBar.setPadding(new Insets(12, 4, 0, 4));
+        return statusBar;
     }
 
     private void searchDemoProfessor() {
         List<Professor> results = professorSearchService.searchByFreeText("Mario Rossi");
 
         if (results.isEmpty()) {
-            outputArea.setText("Nessun professore trovato.");
             selectedProfessor = null;
+            publicationItems.clear();
+            resetProfessorSection();
+            resetPublicationDetails();
+            resetCitationDetails();
+            updateStatus("Nessun professore trovato.");
             return;
         }
 
         selectedProfessor = results.get(0);
+        showProfessorDetails(selectedProfessor);
 
-        StringBuilder builder = new StringBuilder();
-        builder.append("Professore trovato:\n");
-        builder.append("- Nome: ").append(selectedProfessor.fullName()).append("\n");
-        builder.append("- Affiliazione: ").append(selectedProfessor.affiliation()).append("\n");
-        builder.append("- Identificativi:\n");
+        List<Publication> cachedPublications = publicationCatalogService.getCachedPublications(selectedProfessor);
+        publicationItems.setAll(cachedPublications);
 
-        selectedProfessor.externalIdentifiers().forEach(identifier ->
-                builder.append("  • ")
+        if (!publicationItems.isEmpty()) {
+            publicationsTable.getSelectionModel().selectFirst();
+        } else {
+            resetPublicationDetails();
+            resetCitationDetails();
+        }
+
+        updateStatus("Professore caricato. Pubblicazioni in cache: " + publicationItems.size() + ".");
+    }
+
+    private void refreshProfessorPublications() {
+        if (selectedProfessor == null) {
+            updateStatus("Prima devi cercare un professore.");
+            return;
+        }
+
+        List<Publication> publications = publicationCatalogService.refreshPublicationsFromIris(selectedProfessor);
+        publicationItems.setAll(publications);
+
+        if (!publicationItems.isEmpty()) {
+            publicationsTable.getSelectionModel().selectFirst();
+        } else {
+            resetPublicationDetails();
+            resetCitationDetails();
+        }
+
+        updateStatus("Pubblicazioni IRIS aggiornate: " + publications.size() + ".");
+    }
+
+    private void refreshCitationData() {
+        if (selectedProfessor == null) {
+            updateStatus("Prima devi cercare un professore.");
+            return;
+        }
+
+        if (publicationItems.isEmpty()) {
+            updateStatus("Prima devi aggiornare le pubblicazioni da IRIS.");
+            return;
+        }
+
+        citationRefreshService.refreshAllCitationData(selectedProfessor);
+
+        Publication selectedPublication = publicationsTable.getSelectionModel().getSelectedItem();
+        if (selectedPublication != null) {
+            showCitationDetails(selectedPublication);
+        }
+
+        updateStatus("Indici citazionali Scopus e Scholar aggiornati.");
+    }
+
+    private void showProfessorDetails(Professor professor) {
+        professorNameValue.setText(professor.fullName());
+        professorAffiliationValue.setText(professor.affiliation());
+
+        StringBuilder identifiersText = new StringBuilder();
+        professor.externalIdentifiers().forEach(identifier ->
+                identifiersText.append("• ")
                         .append(identifier.type())
                         .append(": ")
                         .append(identifier.value())
@@ -118,104 +328,83 @@ public class ProfessorPublicationsApp extends Application {
                         .append("]\n")
         );
 
-        List<Publication> cachedPublications = publicationCatalogService.getCachedPublications(selectedProfessor);
-
-        builder.append("\nPubblicazioni in cache: ").append(cachedPublications.size()).append("\n");
-        builder.append("Premi \"Refresh pubblicazioni da IRIS\" per aggiornarle.\n");
-
-        outputArea.setText(builder.toString());
+        professorIdentifiersArea.setText(identifiersText.toString());
     }
 
-    private void refreshProfessorPublications() {
-        if (selectedProfessor == null) {
-            outputArea.setText("Prima devi cercare un professore.");
-            return;
-        }
+    private void showPublicationDetails(Publication publication) {
+        StringBuilder builder = new StringBuilder();
 
-        List<Publication> publications = publicationCatalogService.refreshPublicationsFromIris(selectedProfessor);
+        builder.append("Titolo: ").append(publication.title()).append("\n\n");
+        builder.append("Autori: ").append(String.join(", ", publication.authors())).append("\n");
+        builder.append("Anno: ").append(publication.year()).append("\n");
+        builder.append("Venue: ").append(publication.venue() != null ? publication.venue() : "N/D").append("\n");
+        builder.append("DOI: ").append(publication.doi() != null ? publication.doi() : "N/D").append("\n");
+        builder.append("Stato record: ").append(publication.recordStatus()).append("\n");
+        builder.append("Sorgente primaria: ").append(publication.primarySource()).append("\n");
+        builder.append("URL sorgente: ").append(publication.sourceUrl() != null ? publication.sourceUrl() : "N/D").append("\n\n");
+
+        builder.append("Abstract:\n");
+        builder.append(publication.abstractText() != null ? publication.abstractText() : "N/D");
+
+        publicationDetailsArea.setText(builder.toString());
+    }
+
+    private void showCitationDetails(Publication publication) {
+        CitationSummary summary = citationService.getCachedCitationSummary(publication);
+        List<CitingDocument> citingDocuments = citationService.getCachedCitingDocuments(publication);
 
         StringBuilder builder = new StringBuilder();
-        builder.append("Pubblicazioni IRIS aggiornate per ")
-                .append(selectedProfessor.fullName())
-                .append(":\n\n");
 
-        if (publications.isEmpty()) {
-            builder.append("Nessuna pubblicazione trovata.");
+        builder.append("Citazioni Scopus: ")
+                .append(summary.scopusCitationCount() != null ? summary.scopusCitationCount() : "N/D")
+                .append("\n");
+        builder.append("Citazioni Scholar: ")
+                .append(summary.scholarCitationCount() != null ? summary.scholarCitationCount() : "N/D")
+                .append("\n");
+        builder.append("Totale aggregato: ")
+                .append(summary.totalCitationCount() != null ? summary.totalCitationCount() : "N/D")
+                .append("\n\n");
+
+        builder.append("Documenti citanti trovati: ").append(citingDocuments.size()).append("\n\n");
+
+        if (citingDocuments.isEmpty()) {
+            builder.append("Nessun dato citazionale in cache.\n");
+            builder.append("Premi \"Refresh indici Scopus e Scholar\" per aggiornarli.");
         } else {
-            for (int i = 0; i < publications.size(); i++) {
-                Publication publication = publications.get(i);
-
-                builder.append(i + 1).append(". ").append(publication.title()).append("\n");
-                builder.append("   Anno: ").append(publication.year()).append("\n");
-                builder.append("   Venue: ").append(publication.venue()).append("\n");
-                builder.append("   DOI: ").append(publication.doi() != null ? publication.doi() : "N/D").append("\n");
-                builder.append("   Stato: ").append(publication.recordStatus()).append("\n");
-                builder.append("   Sorgente: ").append(publication.primarySource()).append("\n");
-                builder.append("\n");
+            for (CitingDocument document : citingDocuments) {
+                builder.append("• ").append(document.title()).append("\n");
+                builder.append("  Autori: ")
+                        .append(document.authors() != null && !document.authors().isEmpty()
+                                ? String.join(", ", document.authors())
+                                : "N/D")
+                        .append("\n");
+                builder.append("  Anno: ").append(document.year() != null ? document.year() : "N/D").append("\n");
+                builder.append("  DOI: ").append(document.doi() != null ? document.doi() : "N/D").append("\n");
+                builder.append("  Sorgente: ").append(document.sourceType()).append("\n");
+                builder.append("  Stato: ").append(document.recordStatus()).append("\n");
+                builder.append("  URL: ").append(document.sourceUrl() != null ? document.sourceUrl() : "N/D").append("\n\n");
             }
-
-            builder.append("Ora puoi premere \"Refresh indici Scopus e Scholar\".\n");
         }
 
-        outputArea.setText(builder.toString());
+        citationDetailsArea.setText(builder.toString());
     }
 
-    private void refreshCitationData() {
-        if (selectedProfessor == null) {
-            outputArea.setText("Prima devi cercare un professore.");
-            return;
-        }
+    private void resetProfessorSection() {
+        professorNameValue.setText("-");
+        professorAffiliationValue.setText("-");
+        professorIdentifiersArea.setText("");
+    }
 
-        List<Publication> publications = publicationCatalogService.getCachedPublications(selectedProfessor);
+    private void resetPublicationDetails() {
+        publicationDetailsArea.setText("Seleziona una pubblicazione per visualizzarne il dettaglio.");
+    }
 
-        if (publications.isEmpty()) {
-            outputArea.setText("""
-                    Non ci sono pubblicazioni in cache.
-                    Premi prima "Refresh pubblicazioni da IRIS".
-                    """);
-            return;
-        }
+    private void resetCitationDetails() {
+        citationDetailsArea.setText("Seleziona una pubblicazione e aggiorna gli indici citazionali per vedere i dettagli.");
+    }
 
-        citationRefreshService.refreshAllCitationData(selectedProfessor);
-
-        StringBuilder builder = new StringBuilder();
-        builder.append("Indici citazionali aggiornati per ")
-                .append(selectedProfessor.fullName())
-                .append(":\n\n");
-
-        for (int i = 0; i < publications.size(); i++) {
-            Publication publication = publications.get(i);
-            CitationSummary summary = citationService.getCachedCitationSummary(publication);
-            List<CitingDocument> citingDocuments = citationService.getCachedCitingDocuments(publication);
-
-            builder.append(i + 1).append(". ").append(publication.title()).append("\n");
-            builder.append("   Citazioni Scopus: ")
-                    .append(summary.scopusCitationCount() != null ? summary.scopusCitationCount() : "N/D")
-                    .append("\n");
-            builder.append("   Citazioni Scholar: ")
-                    .append(summary.scholarCitationCount() != null ? summary.scholarCitationCount() : "N/D")
-                    .append("\n");
-            builder.append("   Totale aggregato: ")
-                    .append(summary.totalCitationCount() != null ? summary.totalCitationCount() : "N/D")
-                    .append("\n");
-            builder.append("   Documenti citanti trovati: ")
-                    .append(citingDocuments.size())
-                    .append("\n");
-
-            if (!citingDocuments.isEmpty()) {
-                for (CitingDocument document : citingDocuments) {
-                    builder.append("      - ")
-                            .append(document.title())
-                            .append(" [")
-                            .append(document.sourceType())
-                            .append("]\n");
-                }
-            }
-
-            builder.append("\n");
-        }
-
-        outputArea.setText(builder.toString());
+    private void updateStatus(String statusText) {
+        statusLabel.setText(statusText);
     }
 
     public static void main(String[] args) {
