@@ -25,7 +25,9 @@ import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.geometry.Insets;
 import javafx.scene.Scene;
+import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
+import javafx.scene.control.ButtonType;
 import javafx.scene.control.Label;
 import javafx.scene.control.SelectionMode;
 import javafx.scene.control.SplitPane;
@@ -39,11 +41,15 @@ import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Classe principale dell'applicazione JavaFX.
  * Questa versione usa una pagina unica con sezioni fisse:
  * dati del professore, tabella pubblicazioni e dettaglio con citazioni.
+ *
+ * Dopo il refresh delle pubblicazioni da IRIS, l'app propone
+ * un popup per aggiornare gli indici citazionali da Scopus e Scholar.
  */
 public class ProfessorPublicationsApp extends Application {
 
@@ -284,12 +290,13 @@ public class ProfessorPublicationsApp extends Application {
 
         if (!publicationItems.isEmpty()) {
             publicationsTable.getSelectionModel().selectFirst();
+            updateStatus("Pubblicazioni IRIS aggiornate: " + publications.size() + ".");
+            askForCitationRefresh();
         } else {
             resetPublicationDetails();
             resetCitationDetails();
+            updateStatus("Nessuna pubblicazione trovata su IRIS.");
         }
-
-        updateStatus("Pubblicazioni IRIS aggiornate: " + publications.size() + ".");
     }
 
     private void refreshCitationData() {
@@ -311,6 +318,21 @@ public class ProfessorPublicationsApp extends Application {
         }
 
         updateStatus("Indici citazionali Scopus e Scholar aggiornati.");
+    }
+
+    private void askForCitationRefresh() {
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+        alert.setTitle("Aggiornamento indici citazionali");
+        alert.setHeaderText("Pubblicazioni IRIS aggiornate");
+        alert.setContentText("Vuoi aggiornare ora gli indici citazionali da Scopus e Scholar?");
+
+        Optional<ButtonType> result = alert.showAndWait();
+
+        if (result.isPresent() && result.get() == ButtonType.OK) {
+            refreshCitationData();
+        } else {
+            updateStatus("Pubblicazioni IRIS aggiornate. Refresh citazionale rimandato.");
+        }
     }
 
     private void showProfessorDetails(Professor professor) {
