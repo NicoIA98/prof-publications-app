@@ -4,40 +4,38 @@ import com.iadanza.profpublicationsapp.application.service.PublicationCatalogSer
 import com.iadanza.profpublicationsapp.domain.model.Professor;
 import com.iadanza.profpublicationsapp.domain.model.Publication;
 import com.iadanza.profpublicationsapp.infrastructure.connector.IrisConnector;
+import com.iadanza.profpublicationsapp.infrastructure.persistence.PublicationCacheRepository;
 
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Implementazione base del catalogo pubblicazioni.
  * Le pubblicazioni sono considerate canoniche se derivate da IRIS.
  *
- * In questa prima versione la cache è solo in memoria.
- * Più avanti verrà sostituita o affiancata da persistenza SQLite.
+ * In questa versione la cache è persistita su SQLite.
  */
 public class DefaultPublicationCatalogService implements PublicationCatalogService {
 
     private final IrisConnector irisConnector;
-    private final Map<String, List<Publication>> publicationCache = new HashMap<>();
+    private final PublicationCacheRepository publicationCacheRepository;
 
-    public DefaultPublicationCatalogService(IrisConnector irisConnector) {
+    public DefaultPublicationCatalogService(
+            IrisConnector irisConnector,
+            PublicationCacheRepository publicationCacheRepository
+    ) {
         this.irisConnector = irisConnector;
+        this.publicationCacheRepository = publicationCacheRepository;
     }
 
     @Override
     public List<Publication> getCachedPublications(Professor professor) {
-        return publicationCache.getOrDefault(buildProfessorKey(professor), List.of());
+        return publicationCacheRepository.findCachedPublications(professor);
     }
 
     @Override
     public List<Publication> refreshPublicationsFromIris(Professor professor) {
         List<Publication> refreshed = irisConnector.fetchProfessorPublications(professor);
-        publicationCache.put(buildProfessorKey(professor), refreshed);
+        publicationCacheRepository.savePublications(professor, refreshed);
         return refreshed;
-    }
-
-    private String buildProfessorKey(Professor professor) {
-        return (professor.fullName() + "|" + professor.affiliation()).toLowerCase();
     }
 }
