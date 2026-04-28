@@ -16,12 +16,15 @@ import com.iadanza.profpublicationsapp.domain.model.CitationSummary;
 import com.iadanza.profpublicationsapp.domain.model.CitingDocument;
 import com.iadanza.profpublicationsapp.domain.model.Professor;
 import com.iadanza.profpublicationsapp.domain.model.Publication;
+import com.iadanza.profpublicationsapp.infrastructure.config.IrisAccessMode;
+import com.iadanza.profpublicationsapp.infrastructure.config.IrisRuntimeSettings;
 import com.iadanza.profpublicationsapp.infrastructure.connector.IrisConnector;
 import com.iadanza.profpublicationsapp.infrastructure.connector.ScholarConnector;
 import com.iadanza.profpublicationsapp.infrastructure.connector.ScopusConnector;
 import com.iadanza.profpublicationsapp.infrastructure.connector.fake.FakeIrisConnector;
 import com.iadanza.profpublicationsapp.infrastructure.connector.fake.FakeScholarConnector;
 import com.iadanza.profpublicationsapp.infrastructure.connector.fake.FakeScopusConnector;
+import com.iadanza.profpublicationsapp.infrastructure.connector.real.RealIrisConnector;
 import com.iadanza.profpublicationsapp.infrastructure.persistence.CitationCacheRepository;
 import com.iadanza.profpublicationsapp.infrastructure.persistence.PublicationCacheRepository;
 import com.iadanza.profpublicationsapp.infrastructure.persistence.SqliteCitationCacheRepository;
@@ -58,6 +61,7 @@ import javafx.stage.Stage;
 
 import java.io.File;
 import java.io.IOException;
+import java.net.http.HttpClient;
 import java.nio.file.Files;
 import java.util.List;
 import java.util.Optional;
@@ -71,6 +75,10 @@ import java.util.Optional;
  * - citazioni e documenti citanti
  * - BibTeX richiamabile da ogni riga della tabella
  * - cache pubblicazioni e citazioni persistita su SQLite
+ *
+ * In questa fase A1:
+ * - il flusso applicativo continua a usare FakeIrisConnector
+ * - viene eseguito in parallelo un probe reale su IRIS UNICAS
  */
 public class ProfessorPublicationsApp extends Application {
 
@@ -100,6 +108,31 @@ public class ProfessorPublicationsApp extends Application {
 
     @Override
     public void start(Stage stage) {
+        HttpClient httpClient = HttpClient.newBuilder()
+                .connectTimeout(java.time.Duration.ofSeconds(15))
+                .build();
+
+        IrisRuntimeSettings irisRuntimeSettings = new IrisRuntimeSettings(
+                "https://iris.unicas.it",
+                IrisAccessMode.AUTO,
+                "/api/discover/search/objects",
+                "/oai/request?verb=Identify",
+                15,
+                true
+        );
+
+        RealIrisConnector realIrisConnector = new RealIrisConnector(httpClient, irisRuntimeSettings);
+
+        System.out.println("=== IRIS REAL PROBE ===");
+        System.out.println("Base URL: " + realIrisConnector.getProbeResult().baseUrl());
+        System.out.println("REST status: " + realIrisConnector.getProbeResult().restStatusCode());
+        System.out.println("OAI status: " + realIrisConnector.getProbeResult().oaiStatusCode());
+        System.out.println("REST supported: " + realIrisConnector.getProbeResult().restSupported());
+        System.out.println("OAI supported: " + realIrisConnector.getProbeResult().oaiSupported());
+        System.out.println("Capabilities: " + realIrisConnector.getProbeResult().capabilities());
+        System.out.println("Notes: " + realIrisConnector.getProbeResult().notes());
+        System.out.println("=======================");
+
         IrisConnector irisConnector = new FakeIrisConnector();
         ScopusConnector scopusConnector = new FakeScopusConnector();
         ScholarConnector scholarConnector = new FakeScholarConnector();
