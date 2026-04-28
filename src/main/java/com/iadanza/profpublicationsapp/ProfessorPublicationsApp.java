@@ -10,6 +10,7 @@ import com.iadanza.profpublicationsapp.application.service.impl.DefaultCitationR
 import com.iadanza.profpublicationsapp.application.service.impl.DefaultCitationService;
 import com.iadanza.profpublicationsapp.application.service.impl.DefaultProfessorSearchService;
 import com.iadanza.profpublicationsapp.application.service.impl.DefaultPublicationCatalogService;
+import com.iadanza.profpublicationsapp.domain.enums.IdentifierType;
 import com.iadanza.profpublicationsapp.domain.model.BibtexEntry;
 import com.iadanza.profpublicationsapp.domain.model.CitationSummary;
 import com.iadanza.profpublicationsapp.domain.model.CitingDocument;
@@ -36,6 +37,7 @@ import javafx.scene.Scene;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonType;
+import javafx.scene.control.ComboBox;
 import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
 import javafx.scene.control.SelectionMode;
@@ -44,6 +46,7 @@ import javafx.scene.control.TableCell;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
 import javafx.scene.control.TextArea;
+import javafx.scene.control.TextField;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
 import javafx.scene.layout.BorderPane;
@@ -62,7 +65,7 @@ import java.util.Optional;
 /**
  * Classe principale dell'applicazione JavaFX.
  * Dashboard unica con:
- * - dati del professore
+ * - ricerca professore per testo libero o identificativo
  * - tabella pubblicazioni IRIS
  * - dettaglio pubblicazione
  * - citazioni e documenti citanti
@@ -80,6 +83,9 @@ public class ProfessorPublicationsApp extends Application {
     private Professor selectedProfessor;
 
     private final ObservableList<Publication> publicationItems = FXCollections.observableArrayList();
+
+    private ComboBox<String> searchModeCombo;
+    private TextField searchInputField;
 
     private Label professorNameValue;
     private Label professorAffiliationValue;
@@ -122,35 +128,62 @@ public class ProfessorPublicationsApp extends Application {
 
         root.setTop(buildTopBar());
         root.setCenter(buildMainContent());
-        root.setBottom(buildStatusBar());
 
         resetProfessorSection();
         resetPublicationDetails();
         resetCitationDetails();
-        updateStatus("Applicazione avviata. Cerca il professore demo per iniziare.");
+        updateStatus("Applicazione avviata. Inserisci una ricerca per iniziare.");
 
-        Scene scene = new Scene(root, 1250, 780);
+        Scene scene = new Scene(root, 1320, 780);
         stage.setTitle("Professor Publications App");
         stage.setScene(scene);
         stage.show();
     }
 
-    private HBox buildTopBar() {
-        Button searchProfessorButton = new Button("Cerca demo professore");
+    private VBox buildTopBar() {
+        Label searchModeLabel = new Label("Ricerca:");
+
+        searchModeCombo = new ComboBox<>();
+        searchModeCombo.getItems().addAll(
+                "Testo libero",
+                "ORCID",
+                "IRIS ID",
+                "Scopus Author ID",
+                "Scholar Author ID"
+        );
+        searchModeCombo.getSelectionModel().selectFirst();
+        searchModeCombo.setPrefWidth(160);
+
+        searchInputField = new TextField();
+        searchInputField.setPromptText("Es. Mario Rossi / 0000-0001-1111-1111 / IRIS-AUTH-001");
+        searchInputField.setPrefWidth(340);
+        searchInputField.setOnAction(event -> searchProfessor());
+
+        Button searchProfessorButton = new Button("Cerca professore");
         Button refreshPublicationsButton = new Button("Refresh pubblicazioni da IRIS");
         Button refreshCitationsButton = new Button("Refresh indici Scopus e Scholar");
 
-        searchProfessorButton.setOnAction(event -> searchDemoProfessor());
+        searchProfessorButton.setOnAction(event -> searchProfessor());
         refreshPublicationsButton.setOnAction(event -> refreshProfessorPublications());
         refreshCitationsButton.setOnAction(event -> refreshCitationData());
 
-        HBox topBar = new HBox(
+        HBox controlsBar = new HBox(
                 10,
+                searchModeLabel,
+                searchModeCombo,
+                searchInputField,
                 searchProfessorButton,
                 refreshPublicationsButton,
                 refreshCitationsButton
         );
+        controlsBar.setAlignment(Pos.CENTER_LEFT);
+
+        statusLabel = new Label("Stato applicazione");
+        statusLabel.setWrapText(true);
+
+        VBox topBar = new VBox(8, controlsBar, statusLabel);
         topBar.setPadding(new Insets(0, 0, 15, 0));
+
         return topBar;
     }
 
@@ -308,15 +341,24 @@ public class ProfessorPublicationsApp extends Application {
         return detailsPane;
     }
 
-    private HBox buildStatusBar() {
-        statusLabel = new Label("Stato applicazione");
-        HBox statusBar = new HBox(statusLabel);
-        statusBar.setPadding(new Insets(12, 4, 0, 4));
-        return statusBar;
-    }
+    private void searchProfessor() {
+        String query = searchInputField.getText() != null ? searchInputField.getText().trim() : "";
+        String selectedMode = searchModeCombo.getValue();
 
-    private void searchDemoProfessor() {
-        List<Professor> results = professorSearchService.searchByFreeText("Mario Rossi");
+        if (query.isBlank()) {
+            updateStatus("Inserisci un valore di ricerca.");
+            return;
+        }
+
+        List<Professor> results;
+
+        if ("Testo libero".equals(selectedMode)) {
+            results = professorSearchService.searchByFreeText(query);
+        } else {
+            IdentifierType identifierType = mapSearchModeToIdentifierType(selectedMode);
+            Optional<Professor> professor = professorSearchService.findByIdentifier(identifierType, query);
+            results = professor.map(List::of).orElse(List.of());
+        }
 
         if (results.isEmpty()) {
             selectedProfessor = null;
@@ -324,7 +366,7 @@ public class ProfessorPublicationsApp extends Application {
             resetProfessorSection();
             resetPublicationDetails();
             resetCitationDetails();
-            updateStatus("Nessun professore trovato.");
+            updateStatus("Nessun professore trovato per la ricerca: " + query);
             return;
         }
 
@@ -342,6 +384,16 @@ public class ProfessorPublicationsApp extends Application {
         }
 
         updateStatus("Professore caricato. Pubblicazioni in cache: " + publicationItems.size() + ".");
+    }
+
+    private IdentifierType mapSearchModeToIdentifierType(String searchMode) {
+        return switch (searchMode) {
+            case "ORCID" -> IdentifierType.ORCID;
+            case "IRIS ID" -> IdentifierType.IRIS_ID;
+            case "Scopus Author ID" -> IdentifierType.SCOPUS_AUTHOR_ID;
+            case "Scholar Author ID" -> IdentifierType.SCHOLAR_AUTHOR_ID;
+            default -> IdentifierType.ORCID;
+        };
     }
 
     private void refreshProfessorPublications() {
