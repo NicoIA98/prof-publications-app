@@ -1,0 +1,62 @@
+{
+  "professor": {
+    "firstName": "Mario",
+    "lastName": "Rossi",
+    "fullName": "Mario Rossi",
+    "affiliation": "University of Verona",
+    "externalIdentifiers": [
+      {
+        "type": "ORCID",
+        "value": "0000-0001-1111-1111",
+        "sourceType": "IRIS"
+      },
+      {
+        "type": "IRIS_ID",
+        "value": "IRIS-AUTH-001",
+        "sourceType": "IRIS"
+      }
+    ]
+  },
+  "lastRefreshAt": "2026-04-23T10:30:00",
+  "publications": [
+    {
+      "title": "A JavaFX Desktop Architecture for Academic Search",
+      "authors": ["Mario Rossi", "Luca Verdi"],
+      "year": 2024,
+      "venue": "Journal of Software Architecture",
+      "doi": "10.1000/jfx-arch-2024",
+      "abstractText": "This paper presents a JavaFX desktop architecture for academic publication search.",
+      "sourceUrl": "https://iris.example.org/publication/IRIS-PUB-001",
+      "recordStatus": "COMPLETE",
+      "externalIdentifiers": [
+        {
+          "type": "DOI",
+          "value": "10.1000/jfx-arch-2024",
+          "sourceType": "IRIS"
+        },
+        {
+          "type": "IRIS_ID",
+          "value": "IRIS-PUB-001",
+          "sourceType": "IRIS"
+        }
+      ]
+    },
+    {
+      "title": "Institutional Repository Integration in University Systems",
+      "authors": ["Mario Rossi", "Anna Neri"],
+      "year": 2023,
+      "venue": "Proceedings of University Digital Systems",
+      "doi": null,
+      "abstractText": "A study on integrating institutional repositories within university software ecosystems.",
+      "sourceUrl": "https://iris.example.org/publication/IRIS-PUB-002",
+      "recordStatus": "PARTIAL_DATA",
+      "externalIdentifiers": [
+        {
+          "type": "IRIS_ID",
+          "value": "IRIS-PUB-002",
+          "sourceType": "IRIS"
+        }
+      ]
+    }
+  ]
+}

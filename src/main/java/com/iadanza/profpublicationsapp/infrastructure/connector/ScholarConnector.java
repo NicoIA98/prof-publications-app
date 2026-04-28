@@ -18,10 +18,6 @@ public interface ScholarConnector {
 
     Optional<ScholarAuthorMapping> findScholarAuthorMapping(Professor professor);
 
-    List<Publication> findPublicationsByProfessor(Professor professor);
-
-    List<Publication> findPublicationsByScholarAuthorId(String scholarAuthorId);
-
     Optional<CitationSummary> fetchCitationSummary(Publication publication);
 
     List<CitingDocument> findCitingDocuments(Publication publication);

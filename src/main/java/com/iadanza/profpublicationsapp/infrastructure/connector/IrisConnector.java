@@ -9,7 +9,7 @@ import java.util.Optional;
 
 /**
  * Contratto per l'accesso ai dati istituzionali IRIS.
- * IRIS viene trattata come sorgente istituzionale primaria.
+ * IRIS è la sorgente canonica delle pubblicazioni del professore.
  */
 public interface IrisConnector {
 
@@ -17,5 +17,5 @@ public interface IrisConnector {
 
     Optional<Professor> findProfessorByIdentifier(IdentifierType identifierType, String value);
 
-    List<Publication> findPublicationsByProfessor(Professor professor);
+    List<Publication> fetchProfessorPublications(Professor professor);
 }

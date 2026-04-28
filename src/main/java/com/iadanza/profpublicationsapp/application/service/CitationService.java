@@ -11,8 +11,9 @@ import java.util.List;
  * di una specifica pubblicazione.
  */
 public interface CitationService {
+    CitationSummary getCachedCitationSummary(Publication publication);
+    List<CitingDocument> getCachedCitingDocuments(Publication publication);
 
-    CitationSummary getCitationSummary(Publication publication);
-
-    List<CitingDocument> getCitingDocuments(Publication publication);
+    CitationSummary refreshCitationSummary(Publication publication);
+    List<CitingDocument> refreshCitingDocuments(Publication publication);
 }
