@@ -1,5 +1,6 @@
 package com.iadanza.profpublicationsapp.infrastructure.connector;
 
+import com.iadanza.profpublicationsapp.domain.model.BibtexEntry;
 import com.iadanza.profpublicationsapp.domain.model.CitationSummary;
 import com.iadanza.profpublicationsapp.domain.model.CitingDocument;
 import com.iadanza.profpublicationsapp.domain.model.Publication;
@@ -16,4 +17,6 @@ public interface ScopusConnector {
     Optional<CitationSummary> fetchCitationSummary(Publication publication);
 
     List<CitingDocument> findCitingDocuments(Publication publication);
+
+    Optional<BibtexEntry> fetchBibtexEntry(Publication publication);
 }

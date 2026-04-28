@@ -1,13 +1,16 @@
 package com.iadanza.profpublicationsapp;
 
+import com.iadanza.profpublicationsapp.application.service.BibtexService;
 import com.iadanza.profpublicationsapp.application.service.CitationRefreshService;
 import com.iadanza.profpublicationsapp.application.service.CitationService;
 import com.iadanza.profpublicationsapp.application.service.ProfessorSearchService;
 import com.iadanza.profpublicationsapp.application.service.PublicationCatalogService;
+import com.iadanza.profpublicationsapp.application.service.impl.DefaultBibtexService;
 import com.iadanza.profpublicationsapp.application.service.impl.DefaultCitationRefreshService;
 import com.iadanza.profpublicationsapp.application.service.impl.DefaultCitationService;
 import com.iadanza.profpublicationsapp.application.service.impl.DefaultProfessorSearchService;
 import com.iadanza.profpublicationsapp.application.service.impl.DefaultPublicationCatalogService;
+import com.iadanza.profpublicationsapp.domain.model.BibtexEntry;
 import com.iadanza.profpublicationsapp.domain.model.CitationSummary;
 import com.iadanza.profpublicationsapp.domain.model.CitingDocument;
 import com.iadanza.profpublicationsapp.domain.model.Professor;
@@ -28,9 +31,11 @@ import javafx.scene.Scene;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonType;
+import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
 import javafx.scene.control.SelectionMode;
 import javafx.scene.control.SplitPane;
+import javafx.scene.control.TableCell;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
 import javafx.scene.control.TextArea;
@@ -45,11 +50,12 @@ import java.util.Optional;
 
 /**
  * Classe principale dell'applicazione JavaFX.
- * Questa versione usa una pagina unica con sezioni fisse:
- * dati del professore, tabella pubblicazioni e dettaglio con citazioni.
- *
- * Dopo il refresh delle pubblicazioni da IRIS, l'app propone
- * un popup per aggiornare gli indici citazionali da Scopus e Scholar.
+ * Dashboard unica con:
+ * - dati del professore
+ * - tabella pubblicazioni IRIS
+ * - dettaglio pubblicazione
+ * - citazioni e documenti citanti
+ * - BibTeX richiamabile da ogni riga della tabella
  */
 public class ProfessorPublicationsApp extends Application {
 
@@ -57,6 +63,7 @@ public class ProfessorPublicationsApp extends Application {
     private PublicationCatalogService publicationCatalogService;
     private CitationService citationService;
     private CitationRefreshService citationRefreshService;
+    private BibtexService bibtexService;
 
     private Professor selectedProfessor;
 
@@ -89,6 +96,8 @@ public class ProfessorPublicationsApp extends Application {
         this.citationRefreshService =
                 new DefaultCitationRefreshService(publicationCatalogService, defaultCitationService);
 
+        this.bibtexService = new DefaultBibtexService(irisConnector, scopusConnector, scholarConnector);
+
         BorderPane root = new BorderPane();
         root.setPadding(new Insets(15));
 
@@ -116,7 +125,12 @@ public class ProfessorPublicationsApp extends Application {
         refreshPublicationsButton.setOnAction(event -> refreshProfessorPublications());
         refreshCitationsButton.setOnAction(event -> refreshCitationData());
 
-        HBox topBar = new HBox(10, searchProfessorButton, refreshPublicationsButton, refreshCitationsButton);
+        HBox topBar = new HBox(
+                10,
+                searchProfessorButton,
+                refreshPublicationsButton,
+                refreshCitationsButton
+        );
         topBar.setPadding(new Insets(0, 0, 15, 0));
         return topBar;
     }
@@ -147,7 +161,8 @@ public class ProfessorPublicationsApp extends Application {
         professorIdentifiersArea.setWrapText(true);
         professorIdentifiersArea.setPrefRowCount(12);
 
-        VBox professorPane = new VBox(8,
+        VBox professorPane = new VBox(
+                8,
                 sectionTitle,
                 nameLabel, professorNameValue,
                 affiliationLabel, professorAffiliationValue,
@@ -178,6 +193,30 @@ public class ProfessorPublicationsApp extends Application {
         );
         yearColumn.setPrefWidth(70);
 
+        TableColumn<Publication, Void> bibtexColumn = new TableColumn<>("BibTeX");
+        bibtexColumn.setPrefWidth(85);
+        bibtexColumn.setCellFactory(param -> new TableCell<>() {
+            private final Button bibtexButton = new Button(".bib");
+
+            {
+                bibtexButton.setOnAction(event -> {
+                    Publication publication = getTableView().getItems().get(getIndex());
+                    showBibtexForPublication(publication);
+                });
+            }
+
+            @Override
+            protected void updateItem(Void item, boolean empty) {
+                super.updateItem(item, empty);
+
+                if (empty) {
+                    setGraphic(null);
+                } else {
+                    setGraphic(bibtexButton);
+                }
+            }
+        });
+
         TableColumn<Publication, String> venueColumn = new TableColumn<>("Venue");
         venueColumn.setCellValueFactory(cellData ->
                 new ReadOnlyStringWrapper(
@@ -194,7 +233,13 @@ public class ProfessorPublicationsApp extends Application {
         );
         doiColumn.setPrefWidth(170);
 
-        publicationsTable.getColumns().addAll(titleColumn, yearColumn, venueColumn, doiColumn);
+        publicationsTable.getColumns().addAll(
+                titleColumn,
+                yearColumn,
+                bibtexColumn,
+                venueColumn,
+                doiColumn
+        );
 
         publicationsTable.getSelectionModel().selectedItemProperty().addListener((obs, oldValue, newValue) -> {
             if (newValue != null) {
@@ -229,7 +274,8 @@ public class ProfessorPublicationsApp extends Application {
         citationDetailsArea.setWrapText(true);
         citationDetailsArea.setPrefRowCount(16);
 
-        VBox detailsPane = new VBox(8,
+        VBox detailsPane = new VBox(
+                8,
                 publicationTitle,
                 publicationDetailsArea,
                 citationTitle,
@@ -333,6 +379,37 @@ public class ProfessorPublicationsApp extends Application {
         } else {
             updateStatus("Pubblicazioni IRIS aggiornate. Refresh citazionale rimandato.");
         }
+    }
+
+    private void showBibtexForPublication(Publication publication) {
+        if (publication == null) {
+            updateStatus("Seleziona prima una pubblicazione.");
+            return;
+        }
+
+        Optional<BibtexEntry> result = bibtexService.resolveBibtex(publication);
+
+        if (result.isEmpty()) {
+            updateStatus("Impossibile generare o recuperare il BibTeX.");
+            return;
+        }
+
+        BibtexEntry bibtexEntry = result.get();
+
+        updateStatus("BibTeX ottenuto da sorgente: " + bibtexEntry.sourceType() + ".");
+
+        Dialog<Void> dialog = new Dialog<>();
+        dialog.setTitle("BibTeX - " + publication.title());
+        dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
+
+        TextArea bibtexArea = new TextArea(bibtexEntry.rawBibtex());
+        bibtexArea.setEditable(false);
+        bibtexArea.setWrapText(true);
+        bibtexArea.setPrefSize(700, 350);
+
+        dialog.getDialogPane().setContent(bibtexArea);
+        dialog.setResizable(true);
+        dialog.showAndWait();
     }
 
     private void showProfessorDetails(Professor professor) {

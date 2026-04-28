@@ -12,6 +12,7 @@ import com.iadanza.profpublicationsapp.infrastructure.json.IrisExternalIdentifie
 import com.iadanza.profpublicationsapp.infrastructure.json.IrisProfessorJson;
 import com.iadanza.profpublicationsapp.infrastructure.json.IrisProfessorPublicationsJson;
 import com.iadanza.profpublicationsapp.infrastructure.json.IrisPublicationJson;
+import com.iadanza.profpublicationsapp.domain.model.BibtexEntry;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -75,6 +76,29 @@ public class FakeIrisConnector implements IrisConnector {
         return json.publications().stream()
                 .map(this::toDomainPublication)
                 .toList();
+    }
+
+    @Override
+    public Optional<BibtexEntry> fetchBibtexEntry(Publication publication) {
+        if ("10.1000/jfx-arch-2024".equalsIgnoreCase(publication.doi())) {
+            return Optional.of(new BibtexEntry(
+                    "rossi2024javafx",
+                    "article",
+                    """
+                    @article{rossi2024javafx,
+                      title={A JavaFX Desktop Architecture for Academic Search},
+                      author={Rossi, Mario and Verdi, Luca},
+                      journal={Journal of Software Architecture},
+                      year={2024},
+                      doi={10.1000/jfx-arch-2024}
+                    }
+                    """,
+                    SourceType.IRIS,
+                    RecordStatus.COMPLETE
+            ));
+        }
+
+        return Optional.empty();
     }
 
     private IrisProfessorPublicationsJson loadProfessorData() {

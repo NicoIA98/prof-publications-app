@@ -2,6 +2,7 @@ package com.iadanza.profpublicationsapp.infrastructure.connector.fake;
 
 import com.iadanza.profpublicationsapp.domain.enums.RecordStatus;
 import com.iadanza.profpublicationsapp.domain.enums.SourceType;
+import com.iadanza.profpublicationsapp.domain.model.BibtexEntry;
 import com.iadanza.profpublicationsapp.domain.model.CitationSummary;
 import com.iadanza.profpublicationsapp.domain.model.CitingDocument;
 import com.iadanza.profpublicationsapp.domain.model.Publication;
@@ -12,7 +13,7 @@ import java.util.Optional;
 
 /**
  * Implementazione fake di ScopusConnector per simulare
- * dati citazionali e documenti citanti.
+ * dati citazionali, documenti citanti e BibTeX.
  */
 public class FakeScopusConnector implements ScopusConnector {
 
@@ -71,5 +72,28 @@ public class FakeScopusConnector implements ScopusConnector {
         }
 
         return List.of();
+    }
+
+    @Override
+    public Optional<BibtexEntry> fetchBibtexEntry(Publication publication) {
+        if ("Institutional Repository Integration in University Systems"
+                .equalsIgnoreCase(publication.title())) {
+            return Optional.of(new BibtexEntry(
+                    "rossi2023repository",
+                    "inproceedings",
+                    """
+                    @inproceedings{rossi2023repository,
+                      title={Institutional Repository Integration in University Systems},
+                      author={Rossi, Mario and Neri, Anna},
+                      booktitle={Proceedings of University Digital Systems},
+                      year={2023}
+                    }
+                    """,
+                    SourceType.SCOPUS,
+                    RecordStatus.PARTIAL_DATA
+            ));
+        }
+
+        return Optional.empty();
     }
 }
