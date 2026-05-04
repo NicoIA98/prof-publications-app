@@ -24,7 +24,9 @@ import com.iadanza.profpublicationsapp.infrastructure.connector.ScopusConnector;
 import com.iadanza.profpublicationsapp.infrastructure.connector.fake.FakeIrisConnector;
 import com.iadanza.profpublicationsapp.infrastructure.connector.fake.FakeScholarConnector;
 import com.iadanza.profpublicationsapp.infrastructure.connector.fake.FakeScopusConnector;
+import com.iadanza.profpublicationsapp.infrastructure.connector.real.IrisRestAdvancedProbe;
 import com.iadanza.profpublicationsapp.infrastructure.connector.real.RealIrisConnector;
+import com.iadanza.profpublicationsapp.infrastructure.connector.real.RestEndpointProbeResult;
 import com.iadanza.profpublicationsapp.infrastructure.persistence.CitationCacheRepository;
 import com.iadanza.profpublicationsapp.infrastructure.persistence.PublicationCacheRepository;
 import com.iadanza.profpublicationsapp.infrastructure.persistence.SqliteCitationCacheRepository;
@@ -76,9 +78,10 @@ import java.util.Optional;
  * - BibTeX richiamabile da ogni riga della tabella
  * - cache pubblicazioni e citazioni persistita su SQLite
  *
- * In questa fase A1:
+ * In questa fase:
  * - il flusso applicativo continua a usare FakeIrisConnector
- * - viene eseguito in parallelo un probe reale su IRIS UNICAS
+ * - viene eseguito in parallelo un probe reale A1 su IRIS UNICAS
+ * - viene eseguito un probe REST avanzato A1-bis sui path Cineca/IRIS
  */
 public class ProfessorPublicationsApp extends Application {
 
@@ -132,6 +135,31 @@ public class ProfessorPublicationsApp extends Application {
         System.out.println("Capabilities: " + realIrisConnector.getProbeResult().capabilities());
         System.out.println("Notes: " + realIrisConnector.getProbeResult().notes());
         System.out.println("=======================");
+
+        IrisRestAdvancedProbe irisRestAdvancedProbe =
+                new IrisRestAdvancedProbe(
+                        HttpClient.newBuilder()
+                                .connectTimeout(java.time.Duration.ofSeconds(15))
+                                .followRedirects(HttpClient.Redirect.NEVER)
+                                .build(),
+                        "https://iris.unicas.it"
+                );
+
+        System.out.println("=== IRIS REST ADVANCED PROBE ===");
+        for (RestEndpointProbeResult result : irisRestAdvancedProbe.probeAll()) {
+            System.out.println("Method: " + result.method());
+            System.out.println("Path: " + result.path());
+            System.out.println("Status: " + result.statusCode());
+            System.out.println("Redirected: " + result.redirected());
+            System.out.println("Auth likely required: " + result.authLikelyRequired());
+            System.out.println("Endpoint exists likely: " + result.endpointExistsLikely());
+            System.out.println("Location: " + result.locationHeader());
+            System.out.println("Content-Type: " + result.contentType());
+            System.out.println("Notes: " + result.notes());
+            System.out.println("Body preview: " + result.bodyPreview());
+            System.out.println("--------------------------------");
+        }
+        System.out.println("================================");
 
         IrisConnector irisConnector = new FakeIrisConnector();
         ScopusConnector scopusConnector = new FakeScopusConnector();
