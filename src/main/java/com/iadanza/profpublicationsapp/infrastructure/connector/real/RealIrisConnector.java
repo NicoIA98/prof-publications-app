@@ -18,12 +18,12 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Connettore IRIS reale - fase A2.
+ * Connettore IRIS reale - fase A3.
  *
  * In questa fase:
  * - mantiene il probe capability A1
- * - aggiunge test REST autenticati con Basic Auth
- * - non sostituisce ancora il FakeIrisConnector nel flusso principale
+ * - mantiene i test REST autenticati A2
+ * - corregge il payload di items/search con i campi realmente attesi dal server
  */
 public class RealIrisConnector implements IrisConnector {
 
@@ -71,22 +71,72 @@ public class RealIrisConnector implements IrisConnector {
         );
     }
 
+    /**
+     * Cerca gli item/pubblicazioni associati a un context user (crisId)
+     * usando il payload corretto atteso dalla REST IRIS.
+     */
     public AuthenticatedRestCallResult probeAuthenticatedItemsByContextUser(String crisId) {
         String jsonBody = """
                 {
-                  "criteriaSearch": [
+                  "searchColsCriteria": [
                     {
-                      "field": "lookupValues_contextuser",
+                      "column": "lookupValues_contextuser",
                       "operation": "=",
                       "value": "%s"
                     }
                   ],
-                  "sortingColsCriteria": [],
-                  "start": 0,
-                  "rows": 20,
-                  "operator": "all"
+                  "sortingColsCriteria": [
+                    {
+                      "column": "lookupValues_contextuser",
+                      "asc": true
+                    }
+                  ],
+                  "offset": 0,
+                  "limit": 20,
+                  "expand": "all",
+                  "operator": "AND"
                 }
                 """.formatted(crisId);
+
+        return sendAuthenticatedPostJson(
+                buildIrUrl("items/search"),
+                "POST",
+                "/rest/api/v1/items/search",
+                jsonBody
+        );
+    }
+
+    /**
+     * Variante con filtro per anno, utile per verificare una ricerca più simile
+     * a quella usata nel codice dell'ingegnere.
+     */
+    public AuthenticatedRestCallResult probeAuthenticatedItemsByContextUserAndYear(String crisId, String year) {
+        String jsonBody = """
+                {
+                  "searchColsCriteria": [
+                    {
+                      "column": "lookupValues_contextuser",
+                      "operation": "=",
+                      "value": "%s"
+                    },
+                    {
+                      "column": "lookupValues_year",
+                      "operation": "=",
+                      "value": "%s"
+                    }
+                  ],
+                  "sortingColsCriteria": [
+                    {
+                      "column": "lookupValues_contextuser",
+                      "asc": true
+                    }
+                  ],
+                  "offset": 0,
+                  "limit": 20,
+                  "expand": "all",
+                  "operator": "AND"
+                }
+                """.formatted(crisId, year);
 
         return sendAuthenticatedPostJson(
                 buildIrUrl("items/search"),

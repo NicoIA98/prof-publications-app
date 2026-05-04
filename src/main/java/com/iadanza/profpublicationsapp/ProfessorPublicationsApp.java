@@ -73,9 +73,10 @@ import java.util.Optional;
 /**
  * Classe principale dell'applicazione JavaFX.
  *
- * In A2:
+ * In A3:
  * - l'app continua a funzionare con FakeIrisConnector
  * - esegue anche chiamate REST autenticate reali verso IRIS UNICAS
+ * - testa items/search con payload corretto
  */
 public class ProfessorPublicationsApp extends Application {
 
@@ -166,14 +167,11 @@ public class ProfessorPublicationsApp extends Application {
         System.out.println("================================");
 
         System.out.println("=== IRIS AUTHENTICATED REST TESTS ===");
-        if (!realIrisConnector.hasAuthenticatedRestConfiguration()) {
-            System.out.println("Credenziali REST non configurate. Imposta IRIS_REST_USERNAME e IRIS_REST_PASSWORD.");
-        } else {
-            printAuthenticatedResult(realIrisConnector.probeAuthenticatedIrEcho());
-            printAuthenticatedResult(realIrisConnector.probeAuthenticatedRmEcho());
-            printAuthenticatedResult(realIrisConnector.probeAuthenticatedPersonByCrisId("rp00418"));
-            printAuthenticatedResult(realIrisConnector.probeAuthenticatedItemsByContextUser("rp00418"));
-        }
+        printAuthenticatedResult(realIrisConnector.probeAuthenticatedIrEcho());
+        printAuthenticatedResult(realIrisConnector.probeAuthenticatedRmEcho());
+        printAuthenticatedResult(realIrisConnector.probeAuthenticatedPersonByCrisId("rp00418"));
+        printAuthenticatedResult(realIrisConnector.probeAuthenticatedItemsByContextUser("rp00418"));
+        printAuthenticatedResult(realIrisConnector.probeAuthenticatedItemsByContextUserAndYear("rp00418", "2024"));
         System.out.println("=====================================");
 
         IrisConnector irisConnector = new FakeIrisConnector();
