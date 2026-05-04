@@ -68,6 +68,7 @@ import java.io.File;
 import java.io.IOException;
 import java.net.http.HttpClient;
 import java.nio.file.Files;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 
@@ -460,7 +461,9 @@ public class ProfessorPublicationsApp extends Application {
         selectedProfessor = results.get(0);
         showProfessorDetails(selectedProfessor);
 
-        List<Publication> cachedPublications = publicationCatalogService.getCachedPublications(selectedProfessor);
+        List<Publication> cachedPublications = sortPublicationsByYearDesc(
+                publicationCatalogService.getCachedPublications(selectedProfessor)
+        );
         publicationItems.setAll(cachedPublications);
 
         if (!publicationItems.isEmpty()) {
@@ -489,7 +492,9 @@ public class ProfessorPublicationsApp extends Application {
             return;
         }
 
-        List<Publication> publications = publicationCatalogService.refreshPublicationsFromIris(selectedProfessor);
+        List<Publication> publications = sortPublicationsByYearDesc(
+                publicationCatalogService.refreshPublicationsFromIris(selectedProfessor)
+        );
         publicationItems.setAll(publications);
 
         if (!publicationItems.isEmpty()) {
@@ -501,6 +506,20 @@ public class ProfessorPublicationsApp extends Application {
             resetCitationDetails();
             updateStatus("Nessuna pubblicazione trovata su IRIS.");
         }
+    }
+
+    private List<Publication> sortPublicationsByYearDesc(List<Publication> publications) {
+        return publications.stream()
+                .sorted(
+                        Comparator.comparing(
+                                Publication::year,
+                                Comparator.nullsLast(Comparator.reverseOrder())
+                        ).thenComparing(
+                                Publication::title,
+                                Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER)
+                        )
+                )
+                .toList();
     }
 
     private void refreshCitationData() {
