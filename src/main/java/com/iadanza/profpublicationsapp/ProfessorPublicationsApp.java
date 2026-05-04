@@ -19,6 +19,7 @@ import com.iadanza.profpublicationsapp.domain.model.Publication;
 import com.iadanza.profpublicationsapp.infrastructure.config.IrisAccessMode;
 import com.iadanza.profpublicationsapp.infrastructure.config.IrisRestAuthSettings;
 import com.iadanza.profpublicationsapp.infrastructure.config.IrisRuntimeSettings;
+import com.iadanza.profpublicationsapp.infrastructure.connector.HybridIrisConnector;
 import com.iadanza.profpublicationsapp.infrastructure.connector.IrisConnector;
 import com.iadanza.profpublicationsapp.infrastructure.connector.ScholarConnector;
 import com.iadanza.profpublicationsapp.infrastructure.connector.ScopusConnector;
@@ -73,10 +74,10 @@ import java.util.Optional;
 /**
  * Classe principale dell'applicazione JavaFX.
  *
- * In A3:
- * - l'app continua a funzionare con FakeIrisConnector
- * - esegue anche chiamate REST autenticate reali verso IRIS UNICAS
- * - testa items/search con payload corretto
+ * In A4:
+ * - il flusso fake continua a funzionare
+ * - il connettore ibrido usa il real per IRIS ID reali come rp00418
+ * - vengono recuperate pubblicazioni reali da IRIS quando disponibili
  */
 public class ProfessorPublicationsApp extends Application {
 
@@ -174,7 +175,9 @@ public class ProfessorPublicationsApp extends Application {
         printAuthenticatedResult(realIrisConnector.probeAuthenticatedItemsByContextUserAndYear("rp00418", "2024"));
         System.out.println("=====================================");
 
-        IrisConnector irisConnector = new FakeIrisConnector();
+        IrisConnector fakeIrisConnector = new FakeIrisConnector();
+        IrisConnector irisConnector = new HybridIrisConnector(fakeIrisConnector, realIrisConnector);
+
         ScopusConnector scopusConnector = new FakeScopusConnector();
         ScholarConnector scholarConnector = new FakeScholarConnector();
 
@@ -206,7 +209,7 @@ public class ProfessorPublicationsApp extends Application {
         resetProfessorSection();
         resetPublicationDetails();
         resetCitationDetails();
-        updateStatus("Applicazione avviata. Inserisci una ricerca per iniziare.");
+        updateStatus("Applicazione avviata. Prova 'Mario Rossi' oppure IRIS ID = rp00418.");
 
         Scene scene = new Scene(root, 1320, 780);
         stage.setTitle("Professor Publications App");
@@ -239,7 +242,7 @@ public class ProfessorPublicationsApp extends Application {
         searchModeCombo.setPrefWidth(160);
 
         searchInputField = new TextField();
-        searchInputField.setPromptText("Es. Mario Rossi / 0000-0001-1111-1111 / IRIS-AUTH-001");
+        searchInputField.setPromptText("Es. Mario Rossi / rp00418 / 0000-0001-1111-1111");
         searchInputField.setPrefWidth(340);
         searchInputField.setOnAction(event -> searchProfessor());
 
