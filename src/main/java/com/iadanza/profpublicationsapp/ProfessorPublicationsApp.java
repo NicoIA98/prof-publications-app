@@ -17,6 +17,7 @@ import com.iadanza.profpublicationsapp.domain.model.CitingDocument;
 import com.iadanza.profpublicationsapp.domain.model.Professor;
 import com.iadanza.profpublicationsapp.domain.model.Publication;
 import com.iadanza.profpublicationsapp.infrastructure.config.IrisAccessMode;
+import com.iadanza.profpublicationsapp.infrastructure.config.IrisRestAuthSettings;
 import com.iadanza.profpublicationsapp.infrastructure.config.IrisRuntimeSettings;
 import com.iadanza.profpublicationsapp.infrastructure.connector.IrisConnector;
 import com.iadanza.profpublicationsapp.infrastructure.connector.ScholarConnector;
@@ -24,6 +25,7 @@ import com.iadanza.profpublicationsapp.infrastructure.connector.ScopusConnector;
 import com.iadanza.profpublicationsapp.infrastructure.connector.fake.FakeIrisConnector;
 import com.iadanza.profpublicationsapp.infrastructure.connector.fake.FakeScholarConnector;
 import com.iadanza.profpublicationsapp.infrastructure.connector.fake.FakeScopusConnector;
+import com.iadanza.profpublicationsapp.infrastructure.connector.real.AuthenticatedRestCallResult;
 import com.iadanza.profpublicationsapp.infrastructure.connector.real.IrisRestAdvancedProbe;
 import com.iadanza.profpublicationsapp.infrastructure.connector.real.RealIrisConnector;
 import com.iadanza.profpublicationsapp.infrastructure.connector.real.RestEndpointProbeResult;
@@ -70,18 +72,10 @@ import java.util.Optional;
 
 /**
  * Classe principale dell'applicazione JavaFX.
- * Dashboard unica con:
- * - ricerca professore per testo libero o identificativo
- * - tabella pubblicazioni IRIS
- * - dettaglio pubblicazione
- * - citazioni e documenti citanti
- * - BibTeX richiamabile da ogni riga della tabella
- * - cache pubblicazioni e citazioni persistita su SQLite
  *
- * In questa fase:
- * - il flusso applicativo continua a usare FakeIrisConnector
- * - viene eseguito in parallelo un probe reale A1 su IRIS UNICAS
- * - viene eseguito un probe REST avanzato A1-bis sui path Cineca/IRIS
+ * In A2:
+ * - l'app continua a funzionare con FakeIrisConnector
+ * - esegue anche chiamate REST autenticate reali verso IRIS UNICAS
  */
 public class ProfessorPublicationsApp extends Application {
 
@@ -124,7 +118,17 @@ public class ProfessorPublicationsApp extends Application {
                 true
         );
 
-        RealIrisConnector realIrisConnector = new RealIrisConnector(httpClient, irisRuntimeSettings);
+        IrisRestAuthSettings irisRestAuthSettings = new IrisRestAuthSettings(
+                "https://iris.unicas.it:443/",
+                "rest/api/v1/",
+                "rm/restservices/api/v1",
+                "restadmin",
+                "1xR20151019sd2",
+                15
+        );
+
+        RealIrisConnector realIrisConnector =
+                new RealIrisConnector(httpClient, irisRuntimeSettings, irisRestAuthSettings);
 
         System.out.println("=== IRIS REAL PROBE ===");
         System.out.println("Base URL: " + realIrisConnector.getProbeResult().baseUrl());
@@ -160,6 +164,17 @@ public class ProfessorPublicationsApp extends Application {
             System.out.println("--------------------------------");
         }
         System.out.println("================================");
+
+        System.out.println("=== IRIS AUTHENTICATED REST TESTS ===");
+        if (!realIrisConnector.hasAuthenticatedRestConfiguration()) {
+            System.out.println("Credenziali REST non configurate. Imposta IRIS_REST_USERNAME e IRIS_REST_PASSWORD.");
+        } else {
+            printAuthenticatedResult(realIrisConnector.probeAuthenticatedIrEcho());
+            printAuthenticatedResult(realIrisConnector.probeAuthenticatedRmEcho());
+            printAuthenticatedResult(realIrisConnector.probeAuthenticatedPersonByCrisId("rp00418"));
+            printAuthenticatedResult(realIrisConnector.probeAuthenticatedItemsByContextUser("rp00418"));
+        }
+        System.out.println("=====================================");
 
         IrisConnector irisConnector = new FakeIrisConnector();
         ScopusConnector scopusConnector = new FakeScopusConnector();
@@ -199,6 +214,16 @@ public class ProfessorPublicationsApp extends Application {
         stage.setTitle("Professor Publications App");
         stage.setScene(scene);
         stage.show();
+    }
+
+    private void printAuthenticatedResult(AuthenticatedRestCallResult result) {
+        System.out.println("Method: " + result.method());
+        System.out.println("Path: " + result.path());
+        System.out.println("Status: " + result.statusCode());
+        System.out.println("Content-Type: " + result.contentType());
+        System.out.println("Notes: " + result.notes());
+        System.out.println("Body preview: " + result.bodyPreview());
+        System.out.println("--------------------------------");
     }
 
     private VBox buildTopBar() {
