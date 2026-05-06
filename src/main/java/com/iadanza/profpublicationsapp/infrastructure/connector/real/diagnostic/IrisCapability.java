@@ -1,4 +1,4 @@
-package com.iadanza.profpublicationsapp.infrastructure.connector.real;
+package com.iadanza.profpublicationsapp.infrastructure.connector.real.diagnostic;
 
 /**
  * Capability che il probe può rilevare su un'istanza IRIS.

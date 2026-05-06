@@ -1,4 +1,4 @@
-package com.iadanza.profpublicationsapp.infrastructure.connector.real;
+package com.iadanza.profpublicationsapp.infrastructure.connector.real.diagnostic;
 
 import java.util.Set;
 

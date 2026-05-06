@@ -11,6 +11,9 @@ import com.iadanza.profpublicationsapp.domain.model.Publication;
 import com.iadanza.profpublicationsapp.infrastructure.config.IrisRestAuthSettings;
 import com.iadanza.profpublicationsapp.infrastructure.config.IrisRuntimeSettings;
 import com.iadanza.profpublicationsapp.infrastructure.connector.IrisConnector;
+import com.iadanza.profpublicationsapp.infrastructure.connector.real.diagnostic.AuthenticatedRestCallResult;
+import com.iadanza.profpublicationsapp.infrastructure.connector.real.diagnostic.IrisCapabilityProbe;
+import com.iadanza.profpublicationsapp.infrastructure.connector.real.diagnostic.IrisProbeResult;
 import com.iadanza.profpublicationsapp.infrastructure.connector.real.dto.IrisItemSearchResponseDto;
 import com.iadanza.profpublicationsapp.infrastructure.connector.real.dto.IrisPersonRestDto;
 

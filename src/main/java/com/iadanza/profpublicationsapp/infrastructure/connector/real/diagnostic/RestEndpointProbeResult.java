@@ -1,4 +1,4 @@
-package com.iadanza.profpublicationsapp.infrastructure.connector.real;
+package com.iadanza.profpublicationsapp.infrastructure.connector.real.diagnostic;
 
 /**
  * Risultato di un singolo test su un endpoint REST IRIS/CINECA.

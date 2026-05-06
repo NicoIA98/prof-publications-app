@@ -1,4 +1,4 @@
-package com.iadanza.profpublicationsapp.infrastructure.connector.real;
+package com.iadanza.profpublicationsapp.infrastructure.connector.real.diagnostic;
 
 /**
  * Risultato di una chiamata REST autenticata verso IRIS/CINECA.
