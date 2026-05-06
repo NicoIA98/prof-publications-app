@@ -665,10 +665,14 @@ public class ProfessorPublicationsApp extends Application {
     }
 
     private void showPublicationDetails(Publication publication) {
+        String authorsText = (publication.authors() != null && !publication.authors().isEmpty())
+                ? String.join(", ", publication.authors())
+                : "N/D";
+
         StringBuilder builder = new StringBuilder();
 
         builder.append("Titolo: ").append(publication.title()).append("\n\n");
-        builder.append("Autori: ").append(String.join(", ", publication.authors())).append("\n");
+        builder.append("Autori: ").append(authorsText).append("\n");
         builder.append("Anno: ").append(publication.year()).append("\n");
         builder.append("Venue: ").append(publication.venue() != null ? publication.venue() : "N/D").append("\n");
         builder.append("DOI: ").append(publication.doi() != null ? publication.doi() : "N/D").append("\n");
