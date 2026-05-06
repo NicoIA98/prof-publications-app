@@ -19,9 +19,12 @@ import com.iadanza.profpublicationsapp.infrastructure.connector.real.dto.IrisPer
 
 import java.io.IOException;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Optional;
@@ -29,10 +32,10 @@ import java.util.Optional;
 /**
  * Connettore IRIS reale.
  *
- * In A4:
- * - cerca professore reale per crisId (IRIS ID)
- * - recupera pubblicazioni reali via items/search
- * - mappa gli item REST in Publication
+ * In B1:
+ * - ricerca persona per IRIS ID / crisId;
+ * - ricerca persona per Codice fiscale tramite endpoint RM;
+ * - recupera pubblicazioni tramite items/search.
  */
 public class RealIrisConnector implements IrisConnector {
 
@@ -58,7 +61,9 @@ public class RealIrisConnector implements IrisConnector {
         this.probeResult = new IrisCapabilityProbe(httpClient, settings).detectCapabilities();
         this.objectMapper = new ObjectMapper()
                 .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-        this.publicationMapper = new IrisRestPublicationMapper(authSettings != null ? authSettings.baseUrl() : settings.baseUrl());
+        this.publicationMapper = new IrisRestPublicationMapper(
+                authSettings != null ? authSettings.baseUrl() : settings.baseUrl()
+        );
     }
 
     public IrisProbeResult getProbeResult() {
@@ -86,27 +91,7 @@ public class RealIrisConnector implements IrisConnector {
     }
 
     public AuthenticatedRestCallResult probeAuthenticatedItemsByContextUser(String crisId) {
-        String jsonBody = """
-                {
-                  "searchColsCriteria": [
-                    {
-                      "column": "lookupValues_contextuser",
-                      "operation": "=",
-                      "value": "%s"
-                    }
-                  ],
-                  "sortingColsCriteria": [
-                    {
-                      "column": "lookupValues_contextuser",
-                      "asc": true
-                    }
-                  ],
-                  "offset": 0,
-                  "limit": 20,
-                  "expand": "all",
-                  "operator": "AND"
-                }
-                """.formatted(crisId);
+        String jsonBody = buildItemsSearchBody(crisId, null, 0, 20);
 
         return sendAuthenticatedPostJson(
                 buildIrUrl("items/search"),
@@ -117,32 +102,7 @@ public class RealIrisConnector implements IrisConnector {
     }
 
     public AuthenticatedRestCallResult probeAuthenticatedItemsByContextUserAndYear(String crisId, String year) {
-        String jsonBody = """
-                {
-                  "searchColsCriteria": [
-                    {
-                      "column": "lookupValues_contextuser",
-                      "operation": "=",
-                      "value": "%s"
-                    },
-                    {
-                      "column": "lookupValues_year",
-                      "operation": "=",
-                      "value": "%s"
-                    }
-                  ],
-                  "sortingColsCriteria": [
-                    {
-                      "column": "lookupValues_contextuser",
-                      "asc": true
-                    }
-                  ],
-                  "offset": 0,
-                  "limit": 20,
-                  "expand": "all",
-                  "operator": "AND"
-                }
-                """.formatted(crisId, year);
+        String jsonBody = buildItemsSearchBody(crisId, year, 0, 20);
 
         return sendAuthenticatedPostJson(
                 buildIrUrl("items/search"),
@@ -159,48 +119,122 @@ public class RealIrisConnector implements IrisConnector {
 
     @Override
     public Optional<Professor> findProfessorByIdentifier(IdentifierType identifierType, String value) {
-        if (identifierType != IdentifierType.IRIS_ID || value == null || value.isBlank()) {
+        if (value == null || value.isBlank() || !hasAuthenticatedRestConfiguration()) {
             return Optional.empty();
         }
 
-        if (!hasAuthenticatedRestConfiguration()) {
-            return Optional.empty();
+        if (identifierType == IdentifierType.IRIS_ID) {
+            return findProfessorByCrisId(value.trim());
         }
 
+        if (identifierType == IdentifierType.CODICE_FISCALE) {
+            return findProfessorByCodiceFiscale(value.trim());
+        }
+
+        return Optional.empty();
+    }
+
+    private Optional<Professor> findProfessorByCrisId(String crisId) {
         try {
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(buildRmUrl("personsbyrpid/" + value)))
-                    .timeout(java.time.Duration.ofSeconds(authSettings.timeoutSeconds()))
-                    .header("Accept", "application/json, text/plain, */*")
-                    .header("Authorization", buildBasicAuthHeader())
-                    .GET()
-                    .build();
-
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = sendAuthenticatedGetResponse(
+                    buildRmUrl("personsbyrpid/" + encodePathSegment(crisId))
+            );
 
             if (response.statusCode() != 200) {
                 return Optional.empty();
             }
 
-            IrisPersonRestDto personDto = objectMapper.readValue(response.body(), IrisPersonRestDto.class);
+            IrisPersonRestDto personDto = readPersonDto(response.body()).orElse(null);
+            if (personDto == null) {
+                return Optional.empty();
+            }
 
-            Professor professor = new Professor(
-                    personDto.firstName(),
-                    personDto.lastName(),
-                    buildFullName(personDto.firstName(), personDto.lastName()),
-                    "Università degli Studi di Cassino e del Lazio Meridionale",
-                    List.of(new ExternalIdentifier(
-                            IdentifierType.IRIS_ID,
-                            personDto.crisId(),
-                            SourceType.IRIS
-                    ))
-            );
+            return Optional.of(toProfessor(personDto, null));
 
-            return Optional.of(professor);
-
-        } catch (IOException | InterruptedException e) {
+        } catch (IOException | InterruptedException | IllegalArgumentException e) {
+            Thread.currentThread().interrupt();
             return Optional.empty();
         }
+    }
+
+    private Optional<Professor> findProfessorByCodiceFiscale(String codiceFiscale) {
+        String encodedCf = encodePathSegment(codiceFiscale);
+
+        List<String> candidatePaths = List.of(
+                "personsbycf/" + encodedCf,
+                "personbycf/" + encodedCf,
+                "personsbyfiscalcode/" + encodedCf,
+                "personbyfiscalcode/" + encodedCf,
+                "personsbytaxcode/" + encodedCf,
+                "personbytaxcode/" + encodedCf
+        );
+
+        for (String candidatePath : candidatePaths) {
+            try {
+                HttpResponse<String> response = sendAuthenticatedGetResponse(buildRmUrl(candidatePath));
+
+                if (response.statusCode() != 200) {
+                    continue;
+                }
+
+                Optional<IrisPersonRestDto> person = readPersonDto(response.body());
+                if (person.isPresent()) {
+                    return Optional.of(toProfessor(person.get(), codiceFiscale));
+                }
+
+            } catch (IOException | InterruptedException | IllegalArgumentException e) {
+                Thread.currentThread().interrupt();
+                return Optional.empty();
+            }
+        }
+
+        return Optional.empty();
+    }
+
+    private Optional<IrisPersonRestDto> readPersonDto(String body) throws IOException {
+        if (body == null || body.isBlank()) {
+            return Optional.empty();
+        }
+
+        String trimmed = body.trim();
+
+        if (trimmed.startsWith("[")) {
+            IrisPersonRestDto[] people = objectMapper.readValue(trimmed, IrisPersonRestDto[].class);
+            if (people.length == 0) {
+                return Optional.empty();
+            }
+            return Optional.ofNullable(people[0]);
+        }
+
+        return Optional.ofNullable(objectMapper.readValue(trimmed, IrisPersonRestDto.class));
+    }
+
+    private Professor toProfessor(IrisPersonRestDto personDto, String codiceFiscale) {
+        List<ExternalIdentifier> identifiers = new ArrayList<>();
+
+        if (personDto.crisId() != null && !personDto.crisId().isBlank()) {
+            identifiers.add(new ExternalIdentifier(
+                    IdentifierType.IRIS_ID,
+                    personDto.crisId(),
+                    SourceType.IRIS
+            ));
+        }
+
+        if (codiceFiscale != null && !codiceFiscale.isBlank()) {
+            identifiers.add(new ExternalIdentifier(
+                    IdentifierType.CODICE_FISCALE,
+                    codiceFiscale,
+                    SourceType.IRIS
+            ));
+        }
+
+        return new Professor(
+                personDto.firstName(),
+                personDto.lastName(),
+                buildFullName(personDto.firstName(), personDto.lastName()),
+                "Università degli Studi di Cassino e del Lazio Meridionale",
+                identifiers
+        );
     }
 
     @Override
@@ -215,27 +249,7 @@ public class RealIrisConnector implements IrisConnector {
             return List.of();
         }
 
-        String jsonBody = """
-                {
-                  "searchColsCriteria": [
-                    {
-                      "column": "lookupValues_contextuser",
-                      "operation": "=",
-                      "value": "%s"
-                    }
-                  ],
-                  "sortingColsCriteria": [
-                    {
-                      "column": "lookupValues_contextuser",
-                      "asc": true
-                    }
-                  ],
-                  "offset": 0,
-                  "limit": 100,
-                  "expand": "all",
-                  "operator": "AND"
-                }
-                """.formatted(crisId.get());
+        String jsonBody = buildItemsSearchBody(crisId.get(), null, 0, 100);
 
         try {
             HttpRequest request = HttpRequest.newBuilder()
@@ -264,6 +278,7 @@ public class RealIrisConnector implements IrisConnector {
                     .toList();
 
         } catch (IOException | InterruptedException e) {
+            Thread.currentThread().interrupt();
             return List.of();
         }
     }
@@ -271,6 +286,59 @@ public class RealIrisConnector implements IrisConnector {
     @Override
     public Optional<BibtexEntry> fetchBibtexEntry(Publication publication) {
         return Optional.empty();
+    }
+
+    private String buildItemsSearchBody(String crisId, String year, int offset, int limit) {
+        if (year == null || year.isBlank()) {
+            return """
+                    {
+                      "searchColsCriteria": [
+                        {
+                          "column": "lookupValues_contextuser",
+                          "operation": "=",
+                          "value": "%s"
+                        }
+                      ],
+                      "sortingColsCriteria": [
+                        {
+                          "column": "lookupValues_contextuser",
+                          "asc": true
+                        }
+                      ],
+                      "offset": %d,
+                      "limit": %d,
+                      "expand": "all",
+                      "operator": "AND"
+                    }
+                    """.formatted(crisId, offset, limit);
+        }
+
+        return """
+                {
+                  "searchColsCriteria": [
+                    {
+                      "column": "lookupValues_contextuser",
+                      "operation": "=",
+                      "value": "%s"
+                    },
+                    {
+                      "column": "lookupValues_year",
+                      "operation": "=",
+                      "value": "%s"
+                    }
+                  ],
+                  "sortingColsCriteria": [
+                    {
+                      "column": "lookupValues_contextuser",
+                      "asc": true
+                    }
+                  ],
+                  "offset": %d,
+                  "limit": %d,
+                  "expand": "all",
+                  "operator": "AND"
+                }
+                """.formatted(crisId, year, offset, limit);
     }
 
     private AuthenticatedRestCallResult sendAuthenticatedGet(String url, String method, String path) {
@@ -286,18 +354,11 @@ public class RealIrisConnector implements IrisConnector {
         }
 
         try {
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(url))
-                    .timeout(java.time.Duration.ofSeconds(authSettings.timeoutSeconds()))
-                    .header("Accept", "application/json, text/plain, */*")
-                    .header("Authorization", buildBasicAuthHeader())
-                    .GET()
-                    .build();
-
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = sendAuthenticatedGetResponse(url);
             return toResult(method, path, response);
 
         } catch (IOException | InterruptedException | IllegalArgumentException e) {
+            Thread.currentThread().interrupt();
             return new AuthenticatedRestCallResult(
                     method,
                     path,
@@ -307,6 +368,18 @@ public class RealIrisConnector implements IrisConnector {
                     "Errore chiamata autenticata: " + e.getClass().getSimpleName() + " - " + e.getMessage()
             );
         }
+    }
+
+    private HttpResponse<String> sendAuthenticatedGetResponse(String url) throws IOException, InterruptedException {
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(url))
+                .timeout(java.time.Duration.ofSeconds(authSettings.timeoutSeconds()))
+                .header("Accept", "application/json, text/plain, */*")
+                .header("Authorization", buildBasicAuthHeader())
+                .GET()
+                .build();
+
+        return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
     }
 
     private AuthenticatedRestCallResult sendAuthenticatedPostJson(
@@ -340,6 +413,7 @@ public class RealIrisConnector implements IrisConnector {
             return toResult(method, path, response);
 
         } catch (IOException | InterruptedException | IllegalArgumentException e) {
+            Thread.currentThread().interrupt();
             return new AuthenticatedRestCallResult(
                     method,
                     path,
@@ -383,7 +457,7 @@ public class RealIrisConnector implements IrisConnector {
 
     private String buildBasicAuthHeader() {
         String raw = authSettings.username() + ":" + authSettings.password();
-        String encoded = Base64.getEncoder().encodeToString(raw.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        String encoded = Base64.getEncoder().encodeToString(raw.getBytes(StandardCharsets.UTF_8));
         return "Basic " + encoded;
     }
 
@@ -397,6 +471,10 @@ public class RealIrisConnector implements IrisConnector {
         String base = normalizeBaseUrl(authSettings.baseUrl());
         String path = normalizePath(authSettings.pathRM());
         return base + "/" + path + "/" + relativePath;
+    }
+
+    private String encodePathSegment(String value) {
+        return URLEncoder.encode(value, StandardCharsets.UTF_8);
     }
 
     private String normalizeBaseUrl(String value) {

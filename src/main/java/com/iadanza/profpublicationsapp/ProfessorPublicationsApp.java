@@ -26,9 +26,9 @@ import com.iadanza.profpublicationsapp.infrastructure.connector.ScopusConnector;
 import com.iadanza.profpublicationsapp.infrastructure.connector.fake.FakeIrisConnector;
 import com.iadanza.profpublicationsapp.infrastructure.connector.fake.FakeScholarConnector;
 import com.iadanza.profpublicationsapp.infrastructure.connector.fake.FakeScopusConnector;
+import com.iadanza.profpublicationsapp.infrastructure.connector.real.RealIrisConnector;
 import com.iadanza.profpublicationsapp.infrastructure.connector.real.diagnostic.AuthenticatedRestCallResult;
 import com.iadanza.profpublicationsapp.infrastructure.connector.real.diagnostic.IrisRestAdvancedProbe;
-import com.iadanza.profpublicationsapp.infrastructure.connector.real.RealIrisConnector;
 import com.iadanza.profpublicationsapp.infrastructure.connector.real.diagnostic.RestEndpointProbeResult;
 import com.iadanza.profpublicationsapp.infrastructure.persistence.CitationCacheRepository;
 import com.iadanza.profpublicationsapp.infrastructure.persistence.PublicationCacheRepository;
@@ -64,10 +64,15 @@ import javafx.scene.layout.VBox;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.net.http.HttpClient;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
@@ -75,10 +80,10 @@ import java.util.Optional;
 /**
  * Classe principale dell'applicazione JavaFX.
  *
- * In A4:
- * - il flusso fake continua a funzionare
- * - il connettore ibrido usa il real per IRIS ID reali come rp00418
- * - vengono recuperate pubblicazioni reali da IRIS quando disponibili
+ * B1-bis:
+ * - aggiunge pulsante Rubrica CF;
+ * - legge una rubrica locale CSV ricavata dal PDF dipartimentale;
+ * - consente di selezionare un codice fiscale e lanciare direttamente la ricerca REST/RM.
  */
 public class ProfessorPublicationsApp extends Application {
 
@@ -210,7 +215,7 @@ public class ProfessorPublicationsApp extends Application {
         resetProfessorSection();
         resetPublicationDetails();
         resetCitationDetails();
-        updateStatus("Applicazione avviata. Prova 'Mario Rossi' oppure IRIS ID = rp00418.");
+        updateStatus("Applicazione avviata. Cerca per testo libero, ORCID, IRIS ID o Codice fiscale.");
 
         Scene scene = new Scene(root, 1320, 780);
         stage.setTitle("Professor Publications App");
@@ -236,24 +241,25 @@ public class ProfessorPublicationsApp extends Application {
                 "Testo libero",
                 "ORCID",
                 "IRIS ID",
-                "Scopus Author ID",
-                "Scholar Author ID"
+                "Codice fiscale"
         );
         searchModeCombo.getSelectionModel().selectFirst();
         searchModeCombo.setPrefWidth(160);
 
         searchInputField = new TextField();
-        searchInputField.setPromptText("Es. Mario Rossi / rp00418 / 0000-0001-1111-1111");
+        searchInputField.setPromptText("Es. Mario Rossi / rp00418 / codice fiscale");
         searchInputField.setPrefWidth(340);
         searchInputField.setOnAction(event -> searchProfessor());
 
         Button searchProfessorButton = new Button("Cerca professore");
         Button refreshPublicationsButton = new Button("Refresh pubblicazioni da IRIS");
         Button refreshCitationsButton = new Button("Refresh indici Scopus e Scholar");
+        Button professorLookupButton = new Button("Rubrica CF");
 
         searchProfessorButton.setOnAction(event -> searchProfessor());
         refreshPublicationsButton.setOnAction(event -> refreshProfessorPublications());
         refreshCitationsButton.setOnAction(event -> refreshCitationData());
+        professorLookupButton.setOnAction(event -> showProfessorLookupDialog());
 
         HBox controlsBar = new HBox(
                 10,
@@ -262,7 +268,8 @@ public class ProfessorPublicationsApp extends Application {
                 searchInputField,
                 searchProfessorButton,
                 refreshPublicationsButton,
-                refreshCitationsButton
+                refreshCitationsButton,
+                professorLookupButton
         );
         controlsBar.setAlignment(Pos.CENTER_LEFT);
 
@@ -429,6 +436,167 @@ public class ProfessorPublicationsApp extends Application {
         return detailsPane;
     }
 
+    private void showProfessorLookupDialog() {
+        List<ProfessorLookupEntry> entries = loadProfessorLookupEntries();
+
+        if (entries.isEmpty()) {
+            updateStatus("Rubrica CF non disponibile o vuota.");
+            showErrorAlert(
+                    "Rubrica CF non disponibile",
+                    "Controlla che esista il file src/main/resources/lookup/professors-cf.csv."
+            );
+            return;
+        }
+
+        Dialog<Void> dialog = new Dialog<>();
+        dialog.setTitle("Rubrica CF");
+        dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
+        dialog.setResizable(true);
+
+        Label infoLabel = new Label("Seleziona una riga per cercare il professore tramite Codice fiscale.");
+
+        TextField filterField = new TextField();
+        filterField.setPromptText("Filtra per nome, cognome o codice fiscale");
+
+        ObservableList<ProfessorLookupEntry> filteredEntries = FXCollections.observableArrayList(entries);
+
+        TableView<ProfessorLookupEntry> lookupTable = new TableView<>();
+        lookupTable.setItems(filteredEntries);
+        lookupTable.getSelectionModel().setSelectionMode(SelectionMode.SINGLE);
+        lookupTable.setPrefSize(680, 420);
+
+        TableColumn<ProfessorLookupEntry, String> nameColumn = new TableColumn<>("Nome");
+        nameColumn.setCellValueFactory(cellData ->
+                new ReadOnlyStringWrapper(cellData.getValue().nome())
+        );
+        nameColumn.setPrefWidth(190);
+
+        TableColumn<ProfessorLookupEntry, String> surnameColumn = new TableColumn<>("Cognome");
+        surnameColumn.setCellValueFactory(cellData ->
+                new ReadOnlyStringWrapper(cellData.getValue().cognome())
+        );
+        surnameColumn.setPrefWidth(220);
+
+        TableColumn<ProfessorLookupEntry, String> fiscalCodeColumn = new TableColumn<>("Codice Fiscale");
+        fiscalCodeColumn.setCellValueFactory(cellData ->
+                new ReadOnlyStringWrapper(cellData.getValue().codiceFiscale())
+        );
+        fiscalCodeColumn.setPrefWidth(220);
+
+        lookupTable.getColumns().addAll(nameColumn, surnameColumn, fiscalCodeColumn);
+
+        Button useButton = new Button("Usa per ricerca");
+        useButton.setDisable(true);
+
+        lookupTable.getSelectionModel().selectedItemProperty().addListener((obs, oldValue, newValue) ->
+                useButton.setDisable(newValue == null)
+        );
+
+        filterField.textProperty().addListener((obs, oldValue, newValue) -> {
+            String query = newValue != null ? newValue.trim() : "";
+
+            if (query.isBlank()) {
+                filteredEntries.setAll(entries);
+                return;
+            }
+
+            filteredEntries.setAll(
+                    entries.stream()
+                            .filter(entry -> entry.matches(query))
+                            .toList()
+            );
+        });
+
+        useButton.setOnAction(event -> {
+            ProfessorLookupEntry selectedEntry = lookupTable.getSelectionModel().getSelectedItem();
+
+            if (selectedEntry == null) {
+                updateStatus("Seleziona una riga dalla rubrica CF.");
+                return;
+            }
+
+            searchModeCombo.getSelectionModel().select("Codice fiscale");
+            searchInputField.setText(selectedEntry.codiceFiscale());
+            dialog.close();
+
+            updateStatus("Codice fiscale selezionato dalla rubrica: "
+                    + selectedEntry.nome() + " "
+                    + selectedEntry.cognome() + ".");
+
+            searchProfessor();
+        });
+
+        Button closeButton = new Button("Chiudi");
+        closeButton.setOnAction(event -> dialog.close());
+
+        HBox actionBar = new HBox(10, useButton, closeButton);
+        actionBar.setAlignment(Pos.CENTER_RIGHT);
+
+        VBox content = new VBox(10, infoLabel, filterField, lookupTable, actionBar);
+        content.setPadding(new Insets(10));
+        VBox.setVgrow(lookupTable, Priority.ALWAYS);
+
+        dialog.getDialogPane().setContent(content);
+        dialog.showAndWait();
+    }
+
+    private List<ProfessorLookupEntry> loadProfessorLookupEntries() {
+        List<ProfessorLookupEntry> entries = new ArrayList<>();
+
+        try (InputStream inputStream = getClass().getResourceAsStream("/lookup/professors-cf.csv")) {
+            if (inputStream == null) {
+                return List.of();
+            }
+
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(inputStream, StandardCharsets.UTF_8)
+            )) {
+                String line;
+                boolean firstLine = true;
+
+                while ((line = reader.readLine()) != null) {
+                    if (firstLine) {
+                        firstLine = false;
+                        continue;
+                    }
+
+                    if (line.isBlank()) {
+                        continue;
+                    }
+
+                    String[] parts = line.split(";", -1);
+
+                    if (parts.length < 3) {
+                        continue;
+                    }
+
+                    String nome = parts[0].trim();
+                    String cognome = parts[1].trim();
+                    String codiceFiscale = parts[2].trim().toUpperCase();
+
+                    if (!nome.isBlank() && !cognome.isBlank() && !codiceFiscale.isBlank()) {
+                        entries.add(new ProfessorLookupEntry(nome, cognome, codiceFiscale));
+                    }
+                }
+            }
+
+        } catch (IOException e) {
+            return List.of();
+        }
+
+        return entries.stream()
+                .sorted(
+                        Comparator.comparing(
+                                ProfessorLookupEntry::cognome,
+                                String.CASE_INSENSITIVE_ORDER
+                        ).thenComparing(
+                                ProfessorLookupEntry::nome,
+                                String.CASE_INSENSITIVE_ORDER
+                        )
+                )
+                .toList();
+    }
+
     private void searchProfessor() {
         String query = searchInputField.getText() != null ? searchInputField.getText().trim() : "";
         String selectedMode = searchModeCombo.getValue();
@@ -480,8 +648,7 @@ public class ProfessorPublicationsApp extends Application {
         return switch (searchMode) {
             case "ORCID" -> IdentifierType.ORCID;
             case "IRIS ID" -> IdentifierType.IRIS_ID;
-            case "Scopus Author ID" -> IdentifierType.SCOPUS_AUTHOR_ID;
-            case "Scholar Author ID" -> IdentifierType.SCHOLAR_AUTHOR_ID;
+            case "Codice fiscale" -> IdentifierType.CODICE_FISCALE;
             default -> IdentifierType.ORCID;
         };
     }
@@ -665,7 +832,7 @@ public class ProfessorPublicationsApp extends Application {
     }
 
     private void showPublicationDetails(Publication publication) {
-        String authorsText = (publication.authors() != null && !publication.authors().isEmpty())
+        String authorsText = publication.authors() != null && !publication.authors().isEmpty()
                 ? String.join(", ", publication.authors())
                 : "N/D";
 
@@ -746,5 +913,18 @@ public class ProfessorPublicationsApp extends Application {
 
     public static void main(String[] args) {
         launch(args);
+    }
+
+    private record ProfessorLookupEntry(String nome, String cognome, String codiceFiscale) {
+
+        private boolean matches(String query) {
+            String normalizedQuery = query.toLowerCase();
+
+            return nome.toLowerCase().contains(normalizedQuery)
+                    || cognome.toLowerCase().contains(normalizedQuery)
+                    || codiceFiscale.toLowerCase().contains(normalizedQuery)
+                    || (nome + " " + cognome).toLowerCase().contains(normalizedQuery)
+                    || (cognome + " " + nome).toLowerCase().contains(normalizedQuery);
+        }
     }
 }

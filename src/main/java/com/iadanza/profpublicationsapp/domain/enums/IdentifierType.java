@@ -1,16 +1,16 @@
 package com.iadanza.profpublicationsapp.domain.enums;
 
 /**
- * Tipologie di identificativi esterni usati per professori e pubblicazioni.
+ * Tipologie di identificativi esterni usati nell'applicazione.
  */
 public enum IdentifierType {
     ORCID,
     IRIS_ID,
-    SCOPUS_AUTHOR_ID,
-    SCOPUS_EID,
-    SCHOLAR_AUTHOR_ID,
+    CODICE_FISCALE,
+
     DOI,
-    ISSN,
-    ISBN,
-    OTHER
+    SCOPUS_EID,
+    SCOPUS_AUTHOR_ID,
+    SCHOLAR_AUTHOR_ID,
+    SCHOLAR_RESULT_ID
 }

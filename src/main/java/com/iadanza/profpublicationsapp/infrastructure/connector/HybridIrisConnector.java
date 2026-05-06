@@ -9,9 +9,15 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Connettore ibrido:
- * - mantiene il fake per tutto quello che già funziona
- * - usa il real per IRIS ID reali tipo rp00418
+ * Connettore IRIS ibrido.
+ *
+ * Mantiene:
+ * - fake connector per demo stabile;
+ * - real connector per ricerche IRIS reali.
+ *
+ * In B1:
+ * - usa il real connector per IRIS ID reali, es. rp00418;
+ * - usa il real connector anche per Codice fiscale.
  */
 public class HybridIrisConnector implements IrisConnector {
 
@@ -31,6 +37,13 @@ public class HybridIrisConnector implements IrisConnector {
     @Override
     public Optional<Professor> findProfessorByIdentifier(IdentifierType identifierType, String value) {
         if (identifierType == IdentifierType.IRIS_ID && value != null && value.startsWith("rp")) {
+            Optional<Professor> real = realConnector.findProfessorByIdentifier(identifierType, value);
+            if (real.isPresent()) {
+                return real;
+            }
+        }
+
+        if (identifierType == IdentifierType.CODICE_FISCALE && value != null && !value.isBlank()) {
             Optional<Professor> real = realConnector.findProfessorByIdentifier(identifierType, value);
             if (real.isPresent()) {
                 return real;
