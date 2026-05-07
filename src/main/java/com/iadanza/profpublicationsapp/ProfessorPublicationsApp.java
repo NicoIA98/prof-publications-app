@@ -16,6 +16,7 @@ import com.iadanza.profpublicationsapp.domain.model.CitationSummary;
 import com.iadanza.profpublicationsapp.domain.model.CitingDocument;
 import com.iadanza.profpublicationsapp.domain.model.Professor;
 import com.iadanza.profpublicationsapp.domain.model.Publication;
+import com.iadanza.profpublicationsapp.infrastructure.config.DotenvLoader;
 import com.iadanza.profpublicationsapp.infrastructure.config.IrisAccessMode;
 import com.iadanza.profpublicationsapp.infrastructure.config.IrisRestAuthSettings;
 import com.iadanza.profpublicationsapp.infrastructure.config.IrisRuntimeSettings;
@@ -80,10 +81,14 @@ import java.util.Optional;
 /**
  * Classe principale dell'applicazione JavaFX.
  *
- * B1-bis:
- * - aggiunge pulsante Rubrica CF;
- * - legge una rubrica locale CSV ricavata dal PDF dipartimentale;
- * - consente di selezionare un codice fiscale e lanciare direttamente la ricerca REST/RM.
+ * Versione aggiornata:
+ * - credenziali IRIS REST lette da file .env tramite DotenvLoader;
+ * - nessuna password hardcoded nel codice;
+ * - ricerca per Testo libero, ORCID, IRIS ID e Codice fiscale;
+ * - rubrica locale CF da CSV;
+ * - integrazione IRIS reale tramite REST CINECA;
+ * - demo fake ancora disponibile;
+ * - export BibTeX dalla tabella.
  */
 public class ProfessorPublicationsApp extends Application {
 
@@ -126,14 +131,49 @@ public class ProfessorPublicationsApp extends Application {
                 true
         );
 
-        IrisRestAuthSettings irisRestAuthSettings = new IrisRestAuthSettings(
-                "https://iris.unicas.it:443/",
-                "rest/api/v1/",
-                "rm/restservices/api/v1",
-                "restadmin",
-                "1xR20151019sd2",
+        String irisRestBaseUrl = DotenvLoader.getOrDefault(
+                "IRIS_REST_BASE_URL",
+                "https://iris.unicas.it:443/"
+        );
+
+        String irisRestPathIr = DotenvLoader.getOrDefault(
+                "IRIS_REST_PATH_IR",
+                "rest/api/v1/"
+        );
+
+        String irisRestPathRm = DotenvLoader.getOrDefault(
+                "IRIS_REST_PATH_RM",
+                "rm/restservices/api/v1"
+        );
+
+        String irisRestUsername = DotenvLoader.getOrDefault(
+                "IRIS_REST_USERNAME",
+                "restadmin"
+        );
+
+        String irisRestPassword = DotenvLoader.getOrDefault(
+                "IRIS_REST_PASSWORD",
+                ""
+        );
+
+        int irisRestTimeoutSeconds = DotenvLoader.getIntOrDefault(
+                "IRIS_REST_TIMEOUT_SECONDS",
                 15
         );
+
+        IrisRestAuthSettings irisRestAuthSettings = new IrisRestAuthSettings(
+                irisRestBaseUrl,
+                irisRestPathIr,
+                irisRestPathRm,
+                irisRestUsername,
+                irisRestPassword,
+                irisRestTimeoutSeconds
+        );
+
+        System.out.println("IRIS REST credentials loaded. Username configured: "
+                + !irisRestUsername.isBlank()
+                + ", password configured: "
+                + !irisRestPassword.isBlank());
 
         RealIrisConnector realIrisConnector =
                 new RealIrisConnector(httpClient, irisRuntimeSettings, irisRestAuthSettings);
@@ -380,13 +420,11 @@ public class ProfessorPublicationsApp extends Application {
         );
         doiColumn.setPrefWidth(170);
 
-        publicationsTable.getColumns().addAll(
-                titleColumn,
-                yearColumn,
-                bibtexColumn,
-                venueColumn,
-                doiColumn
-        );
+        publicationsTable.getColumns().add(titleColumn);
+        publicationsTable.getColumns().add(yearColumn);
+        publicationsTable.getColumns().add(bibtexColumn);
+        publicationsTable.getColumns().add(venueColumn);
+        publicationsTable.getColumns().add(doiColumn);
 
         publicationsTable.getSelectionModel().selectedItemProperty().addListener((obs, oldValue, newValue) -> {
             if (newValue != null) {
@@ -483,7 +521,9 @@ public class ProfessorPublicationsApp extends Application {
         );
         fiscalCodeColumn.setPrefWidth(220);
 
-        lookupTable.getColumns().addAll(nameColumn, surnameColumn, fiscalCodeColumn);
+        lookupTable.getColumns().add(nameColumn);
+        lookupTable.getColumns().add(surnameColumn);
+        lookupTable.getColumns().add(fiscalCodeColumn);
 
         Button useButton = new Button("Usa per ricerca");
         useButton.setDisable(true);

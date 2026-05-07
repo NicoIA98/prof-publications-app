@@ -14,6 +14,7 @@ import com.iadanza.profpublicationsapp.infrastructure.connector.IrisConnector;
 import com.iadanza.profpublicationsapp.infrastructure.connector.real.diagnostic.AuthenticatedRestCallResult;
 import com.iadanza.profpublicationsapp.infrastructure.connector.real.diagnostic.IrisCapabilityProbe;
 import com.iadanza.profpublicationsapp.infrastructure.connector.real.diagnostic.IrisProbeResult;
+import com.iadanza.profpublicationsapp.infrastructure.connector.real.dto.IrisItemDto;
 import com.iadanza.profpublicationsapp.infrastructure.connector.real.dto.IrisItemSearchResponseDto;
 import com.iadanza.profpublicationsapp.infrastructure.connector.real.dto.IrisPersonRestDto;
 
@@ -26,18 +27,25 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
  * Connettore IRIS reale.
  *
- * In B1:
- * - ricerca persona per IRIS ID / crisId;
- * - ricerca persona per Codice fiscale tramite endpoint RM;
- * - recupera pubblicazioni tramite items/search.
+ * B2-bis:
+ * - recupera tutte le pagine da items/search;
+ * - gestisce il limite reale imposto dal server IRIS/CINECA;
+ * - se il server restituisce 51 record anche quando chiediamo 100, continua con offset 51, 102, ecc.;
+ * - usa count, offset e numero reale di item restituiti;
+ * - mantiene log diagnostici per verificare il numero di record recuperati.
  */
 public class RealIrisConnector implements IrisConnector {
+
+    private static final int ITEMS_PAGE_SIZE = 100;
+    private static final int MAX_ITEMS_PAGES = 50;
 
     private final HttpClient httpClient;
     private final IrisRuntimeSettings settings;
@@ -144,15 +152,13 @@ public class RealIrisConnector implements IrisConnector {
                 return Optional.empty();
             }
 
-            IrisPersonRestDto personDto = readPersonDto(response.body()).orElse(null);
-            if (personDto == null) {
-                return Optional.empty();
-            }
+            Optional<IrisPersonRestDto> personDto = readPersonDto(response.body());
+            return personDto.map(dto -> toProfessor(dto, null));
 
-            return Optional.of(toProfessor(personDto, null));
-
-        } catch (IOException | InterruptedException | IllegalArgumentException e) {
+        } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            return Optional.empty();
+        } catch (IOException | IllegalArgumentException e) {
             return Optional.empty();
         }
     }
@@ -182,8 +188,10 @@ public class RealIrisConnector implements IrisConnector {
                     return Optional.of(toProfessor(person.get(), codiceFiscale));
                 }
 
-            } catch (IOException | InterruptedException | IllegalArgumentException e) {
+            } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
+                return Optional.empty();
+            } catch (IOException | IllegalArgumentException e) {
                 return Optional.empty();
             }
         }
@@ -249,7 +257,127 @@ public class RealIrisConnector implements IrisConnector {
             return List.of();
         }
 
-        String jsonBody = buildItemsSearchBody(crisId.get(), null, 0, 100);
+        List<IrisItemDto> allItems = fetchAllItemsByContextUser(crisId.get());
+
+        System.out.println("IRIS items/search mapping started. crisId="
+                + crisId.get()
+                + ", rawItems="
+                + allItems.size());
+
+        List<Publication> publications = allItems.stream()
+                .map(publicationMapper::toDomainPublication)
+                .toList();
+
+        System.out.println("IRIS items/search mapping completed. crisId="
+                + crisId.get()
+                + ", publications="
+                + publications.size());
+
+        return publications;
+    }
+
+    private List<IrisItemDto> fetchAllItemsByContextUser(String crisId) {
+        List<IrisItemDto> accumulatedItems = new ArrayList<>();
+
+        int offset = 0;
+        int page = 0;
+        Integer expectedTotal = null;
+
+        while (page < MAX_ITEMS_PAGES) {
+            IrisItemSearchResponseDto responseDto = fetchItemsPage(crisId, offset, ITEMS_PAGE_SIZE).orElse(null);
+
+            if (responseDto == null) {
+                System.out.println("IRIS items/search stopped. Empty or invalid response at offset=" + offset);
+                break;
+            }
+
+            List<IrisItemDto> pageItems = responseDto.restResourceDtoList() != null
+                    ? responseDto.restResourceDtoList()
+                    : List.of();
+
+            if (expectedTotal == null && responseDto.count() != null) {
+                expectedTotal = responseDto.count();
+            }
+
+            System.out.println("IRIS items/search page fetched. crisId="
+                    + crisId
+                    + ", page="
+                    + page
+                    + ", offset="
+                    + offset
+                    + ", requestedLimit="
+                    + ITEMS_PAGE_SIZE
+                    + ", responseLimit="
+                    + responseDto.limit()
+                    + ", responseOffset="
+                    + responseDto.offset()
+                    + ", responseCount="
+                    + responseDto.count()
+                    + ", pageItems="
+                    + pageItems.size()
+                    + ", accumulatedBefore="
+                    + accumulatedItems.size());
+
+            if (pageItems.isEmpty()) {
+                break;
+            }
+
+            accumulatedItems.addAll(pageItems);
+
+            if (expectedTotal != null && accumulatedItems.size() >= expectedTotal) {
+                break;
+            }
+
+            int nextOffset = calculateNextOffset(offset, responseDto, pageItems.size());
+
+            if (nextOffset <= offset) {
+                System.out.println("IRIS items/search stopped. Next offset did not advance. currentOffset="
+                        + offset
+                        + ", nextOffset="
+                        + nextOffset);
+                break;
+            }
+
+            offset = nextOffset;
+            page++;
+        }
+
+        List<IrisItemDto> deduplicatedItems = deduplicateItemsKeepingOrder(accumulatedItems);
+
+        System.out.println("IRIS items/search completed. crisId="
+                + crisId
+                + ", expectedTotal="
+                + expectedTotal
+                + ", accumulatedItems="
+                + accumulatedItems.size()
+                + ", deduplicatedItems="
+                + deduplicatedItems.size());
+
+        return deduplicatedItems;
+    }
+
+    private int calculateNextOffset(
+            int currentOffset,
+            IrisItemSearchResponseDto responseDto,
+            int pageItemsSize
+    ) {
+        if (responseDto.offset() != null && pageItemsSize > 0) {
+            return responseDto.offset() + pageItemsSize;
+        }
+
+        if (responseDto.limit() != null && responseDto.limit() > 0) {
+            return currentOffset + responseDto.limit();
+        }
+
+        if (pageItemsSize > 0) {
+            return currentOffset + pageItemsSize;
+        }
+
+        return currentOffset + ITEMS_PAGE_SIZE;
+    }
+
+    private Optional<IrisItemSearchResponseDto> fetchItemsPage(String crisId, int offset, int limit) {
+        String jsonBody = buildItemsSearchBody(crisId, null, offset, limit);
 
         try {
             HttpRequest request = HttpRequest.newBuilder()
@@ -264,23 +392,60 @@ public class RealIrisConnector implements IrisConnector {
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
             if (response.statusCode() != 200) {
-                return List.of();
+                System.out.println("IRIS items/search page failed. crisId="
+                        + crisId
+                        + ", offset="
+                        + offset
+                        + ", status="
+                        + response.statusCode()
+                        + ", bodyPreview="
+                        + preview(response.body(), 300));
+                return Optional.empty();
             }
 
-            IrisItemSearchResponseDto dto = objectMapper.readValue(response.body(), IrisItemSearchResponseDto.class);
+            return Optional.of(objectMapper.readValue(response.body(), IrisItemSearchResponseDto.class));
 
-            if (dto.restResourceDtoList() == null) {
-                return List.of();
-            }
-
-            return dto.restResourceDtoList().stream()
-                    .map(publicationMapper::toDomainPublication)
-                    .toList();
-
-        } catch (IOException | InterruptedException e) {
+        } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            return List.of();
+            return Optional.empty();
+        } catch (IOException | IllegalArgumentException e) {
+            System.out.println("IRIS items/search page exception. crisId="
+                    + crisId
+                    + ", offset="
+                    + offset
+                    + ", error="
+                    + e.getClass().getSimpleName()
+                    + ": "
+                    + e.getMessage());
+            return Optional.empty();
         }
+    }
+
+    private List<IrisItemDto> deduplicateItemsKeepingOrder(List<IrisItemDto> items) {
+        Map<String, IrisItemDto> ordered = new LinkedHashMap<>();
+
+        for (IrisItemDto item : items) {
+            if (item == null) {
+                continue;
+            }
+
+            String key = buildItemDeduplicationKey(item);
+            ordered.putIfAbsent(key, item);
+        }
+
+        return new ArrayList<>(ordered.values());
+    }
+
+    private String buildItemDeduplicationKey(IrisItemDto item) {
+        if (item.handle() != null && !item.handle().isBlank()) {
+            return "handle:" + item.handle();
+        }
+
+        if (item.name() != null && !item.name().isBlank()) {
+            return "name:" + item.name();
+        }
+
+        return "object:" + System.identityHashCode(item);
     }
 
     @Override
@@ -357,8 +522,17 @@ public class RealIrisConnector implements IrisConnector {
             HttpResponse<String> response = sendAuthenticatedGetResponse(url);
             return toResult(method, path, response);
 
-        } catch (IOException | InterruptedException | IllegalArgumentException e) {
+        } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            return new AuthenticatedRestCallResult(
+                    method,
+                    path,
+                    -1,
+                    null,
+                    "",
+                    "Chiamata interrotta"
+            );
+        } catch (IOException | IllegalArgumentException e) {
             return new AuthenticatedRestCallResult(
                     method,
                     path,
@@ -412,8 +586,17 @@ public class RealIrisConnector implements IrisConnector {
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
             return toResult(method, path, response);
 
-        } catch (IOException | InterruptedException | IllegalArgumentException e) {
+        } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            return new AuthenticatedRestCallResult(
+                    method,
+                    path,
+                    -1,
+                    null,
+                    "",
+                    "Chiamata interrotta"
+            );
+        } catch (IOException | IllegalArgumentException e) {
             return new AuthenticatedRestCallResult(
                     method,
                     path,
@@ -427,7 +610,7 @@ public class RealIrisConnector implements IrisConnector {
 
     private AuthenticatedRestCallResult toResult(String method, String path, HttpResponse<String> response) {
         String body = response.body() != null ? response.body() : "";
-        String preview = body.length() > 300 ? body.substring(0, 300) + "..." : body;
+        String preview = preview(body, 300);
         String contentType = response.headers().firstValue("Content-Type").orElse(null);
 
         String notes;
@@ -499,5 +682,17 @@ public class RealIrisConnector implements IrisConnector {
         String first = firstName != null ? firstName.trim() : "";
         String last = lastName != null ? lastName.trim() : "";
         return (first + " " + last).trim();
+    }
+
+    private String preview(String text, int maxLength) {
+        if (text == null) {
+            return "";
+        }
+
+        if (text.length() <= maxLength) {
+            return text;
+        }
+
+        return text.substring(0, maxLength) + "...";
     }
 }

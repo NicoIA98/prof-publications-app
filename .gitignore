@@ -13,3 +13,7 @@ target/
 # File temporanei / specifici del sistema operativo
 .DS_Store
 Thumbs.db
+
+.env
+*.env
+!.env.example
