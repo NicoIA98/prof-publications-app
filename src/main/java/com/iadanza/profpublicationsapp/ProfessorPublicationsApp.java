@@ -15,6 +15,7 @@ import com.iadanza.profpublicationsapp.domain.model.BibtexEntry;
 import com.iadanza.profpublicationsapp.domain.model.CitationSummary;
 import com.iadanza.profpublicationsapp.domain.model.CitingDocument;
 import com.iadanza.profpublicationsapp.domain.model.Professor;
+import com.iadanza.profpublicationsapp.domain.model.ProfessorLookupEntry;
 import com.iadanza.profpublicationsapp.domain.model.Publication;
 import com.iadanza.profpublicationsapp.infrastructure.config.DotenvLoader;
 import com.iadanza.profpublicationsapp.infrastructure.config.IrisAccessMode;
@@ -31,6 +32,8 @@ import com.iadanza.profpublicationsapp.infrastructure.connector.real.RealIrisCon
 import com.iadanza.profpublicationsapp.infrastructure.connector.real.diagnostic.AuthenticatedRestCallResult;
 import com.iadanza.profpublicationsapp.infrastructure.connector.real.diagnostic.IrisRestAdvancedProbe;
 import com.iadanza.profpublicationsapp.infrastructure.connector.real.diagnostic.RestEndpointProbeResult;
+import com.iadanza.profpublicationsapp.infrastructure.lookup.CsvProfessorLookupRepository;
+import com.iadanza.profpublicationsapp.infrastructure.lookup.ProfessorLookupRepository;
 import com.iadanza.profpublicationsapp.infrastructure.persistence.CitationCacheRepository;
 import com.iadanza.profpublicationsapp.infrastructure.persistence.PublicationCacheRepository;
 import com.iadanza.profpublicationsapp.infrastructure.persistence.SqliteCitationCacheRepository;
@@ -40,22 +43,28 @@ import javafx.beans.property.ReadOnlyObjectWrapper;
 import javafx.beans.property.ReadOnlyStringWrapper;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
+import javafx.event.ActionEvent;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
+import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.ComboBox;
+import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
+import javafx.scene.control.MenuItem;
 import javafx.scene.control.SelectionMode;
 import javafx.scene.control.SplitPane;
 import javafx.scene.control.TableCell;
 import javafx.scene.control.TableColumn;
+import javafx.scene.control.TableRow;
 import javafx.scene.control.TableView;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
+import javafx.scene.image.Image;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
 import javafx.scene.layout.BorderPane;
@@ -65,30 +74,25 @@ import javafx.scene.layout.VBox;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 
-import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
+import java.net.URL;
 import java.net.http.HttpClient;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Classe principale dell'applicazione JavaFX.
  *
- * Versione aggiornata:
- * - credenziali IRIS REST lette da file .env tramite DotenvLoader;
- * - nessuna password hardcoded nel codice;
- * - ricerca per Testo libero, ORCID, IRIS ID e Codice fiscale;
- * - rubrica locale CF da CSV;
- * - integrazione IRIS reale tramite REST CINECA;
- * - demo fake ancora disponibile;
- * - export BibTeX dalla tabella.
+ * D2-bis:
+ * - filtro testuale sulle pubblicazioni IRIS;
+ * - bottone BibTeX verde sulla pubblicazione selezionata;
+ * - caricamento icona applicazione da resources/icons/app-icon.png;
+ * - mantenimento rubrica CF modificabile.
  */
 public class ProfessorPublicationsApp extends Application {
 
@@ -97,13 +101,16 @@ public class ProfessorPublicationsApp extends Application {
     private CitationService citationService;
     private CitationRefreshService citationRefreshService;
     private BibtexService bibtexService;
+    private ProfessorLookupRepository professorLookupRepository;
 
     private Professor selectedProfessor;
 
     private final ObservableList<Publication> publicationItems = FXCollections.observableArrayList();
+    private final List<Publication> allPublicationItems = new ArrayList<>();
 
     private ComboBox<String> searchModeCombo;
     private TextField searchInputField;
+    private TextField publicationFilterField;
 
     private Label professorNameValue;
     private Label professorAffiliationValue;
@@ -246,7 +253,11 @@ public class ProfessorPublicationsApp extends Application {
 
         this.bibtexService = new DefaultBibtexService(irisConnector, scopusConnector, scholarConnector);
 
+        this.professorLookupRepository =
+                new CsvProfessorLookupRepository("/lookup/professors-cf.csv");
+
         BorderPane root = new BorderPane();
+        root.getStyleClass().add("app-root");
         root.setPadding(new Insets(15));
 
         root.setTop(buildTopBar());
@@ -258,9 +269,34 @@ public class ProfessorPublicationsApp extends Application {
         updateStatus("Applicazione avviata. Cerca per testo libero, ORCID, IRIS ID o Codice fiscale.");
 
         Scene scene = new Scene(root, 1320, 780);
+        applyStylesheet(scene);
+        applyApplicationIcon(stage);
+
         stage.setTitle("Professor Publications App");
         stage.setScene(scene);
         stage.show();
+    }
+
+    private void applyStylesheet(Scene scene) {
+        URL stylesheet = getClass().getResource("/styles/app.css");
+
+        if (stylesheet == null) {
+            System.out.println("Stylesheet non trovato: /styles/app.css");
+            return;
+        }
+
+        scene.getStylesheets().add(stylesheet.toExternalForm());
+    }
+
+    private void applyApplicationIcon(Stage stage) {
+        URL iconUrl = getClass().getResource("/icons/app-icon.png");
+
+        if (iconUrl == null) {
+            System.out.println("Icona applicazione non trovata: /icons/app-icon.png");
+            return;
+        }
+
+        stage.getIcons().add(new Image(iconUrl.toExternalForm()));
     }
 
     private void printAuthenticatedResult(AuthenticatedRestCallResult result) {
@@ -292,9 +328,16 @@ public class ProfessorPublicationsApp extends Application {
         searchInputField.setOnAction(event -> searchProfessor());
 
         Button searchProfessorButton = new Button("Cerca professore");
+        searchProfessorButton.getStyleClass().add("primary-button");
+
         Button refreshPublicationsButton = new Button("Refresh pubblicazioni da IRIS");
+        refreshPublicationsButton.getStyleClass().add("secondary-button");
+
         Button refreshCitationsButton = new Button("Refresh indici Scopus e Scholar");
+        refreshCitationsButton.getStyleClass().add("secondary-button");
+
         Button professorLookupButton = new Button("Rubrica CF");
+        professorLookupButton.getStyleClass().add("success-button");
 
         searchProfessorButton.setOnAction(event -> searchProfessor());
         refreshPublicationsButton.setOnAction(event -> refreshProfessorPublications());
@@ -311,12 +354,15 @@ public class ProfessorPublicationsApp extends Application {
                 refreshCitationsButton,
                 professorLookupButton
         );
+        controlsBar.getStyleClass().add("search-bar");
         controlsBar.setAlignment(Pos.CENTER_LEFT);
 
         statusLabel = new Label("Stato applicazione");
+        statusLabel.getStyleClass().add("status-label");
         statusLabel.setWrapText(true);
 
         VBox topBar = new VBox(8, controlsBar, statusLabel);
+        topBar.getStyleClass().add("top-bar");
         topBar.setPadding(new Insets(0, 0, 15, 0));
 
         return topBar;
@@ -334,7 +380,7 @@ public class ProfessorPublicationsApp extends Application {
 
     private VBox buildProfessorPane() {
         Label sectionTitle = new Label("Professore");
-        sectionTitle.setStyle("-fx-font-size: 16px; -fx-font-weight: bold;");
+        sectionTitle.getStyleClass().add("section-title");
 
         Label nameLabel = new Label("Nome:");
         professorNameValue = new Label("-");
@@ -355,6 +401,7 @@ public class ProfessorPublicationsApp extends Application {
                 affiliationLabel, professorAffiliationValue,
                 identifiersLabel, professorIdentifiersArea
         );
+        professorPane.getStyleClass().add("panel");
         professorPane.setPadding(new Insets(10));
         VBox.setVgrow(professorIdentifiersArea, Priority.ALWAYS);
         return professorPane;
@@ -362,9 +409,15 @@ public class ProfessorPublicationsApp extends Application {
 
     private VBox buildPublicationsPane() {
         Label sectionTitle = new Label("Pubblicazioni IRIS");
-        sectionTitle.setStyle("-fx-font-size: 16px; -fx-font-weight: bold;");
+        sectionTitle.getStyleClass().add("section-title");
+
+        publicationFilterField = new TextField();
+        publicationFilterField.setPromptText("Filtra pubblicazioni per titolo, anno, autore, venue o DOI");
+        publicationFilterField.getStyleClass().add("publication-filter");
+        publicationFilterField.textProperty().addListener((obs, oldValue, newValue) -> applyPublicationFilter());
 
         publicationsTable = new TableView<>();
+        publicationsTable.getStyleClass().add("publications-table");
         publicationsTable.getSelectionModel().setSelectionMode(SelectionMode.SINGLE);
         publicationsTable.setItems(publicationItems);
 
@@ -386,6 +439,7 @@ public class ProfessorPublicationsApp extends Application {
             private final Button bibtexButton = new Button(".bib");
 
             {
+                bibtexButton.getStyleClass().add("secondary-button");
                 bibtexButton.setOnAction(event -> {
                     Publication publication = getTableView().getItems().get(getIndex());
                     showBibtexForPublication(publication);
@@ -396,11 +450,23 @@ public class ProfessorPublicationsApp extends Application {
             protected void updateItem(Void item, boolean empty) {
                 super.updateItem(item, empty);
 
-                if (empty) {
+                bibtexButton.getStyleClass().remove("bibtex-selected-button");
+
+                if (empty || getIndex() < 0 || getIndex() >= getTableView().getItems().size()) {
                     setGraphic(null);
-                } else {
-                    setGraphic(bibtexButton);
+                    return;
                 }
+
+                Publication rowPublication = getTableView().getItems().get(getIndex());
+                Publication selectedPublication = getTableView().getSelectionModel().getSelectedItem();
+
+                if (rowPublication != null && rowPublication.equals(selectedPublication)) {
+                    if (!bibtexButton.getStyleClass().contains("bibtex-selected-button")) {
+                        bibtexButton.getStyleClass().add("bibtex-selected-button");
+                    }
+                }
+
+                setGraphic(bibtexButton);
             }
         });
 
@@ -434,9 +500,12 @@ public class ProfessorPublicationsApp extends Application {
                 resetPublicationDetails();
                 resetCitationDetails();
             }
+
+            publicationsTable.refresh();
         });
 
-        VBox publicationsPane = new VBox(8, sectionTitle, publicationsTable);
+        VBox publicationsPane = new VBox(8, sectionTitle, publicationFilterField, publicationsTable);
+        publicationsPane.getStyleClass().add("panel");
         publicationsPane.setPadding(new Insets(10));
         VBox.setVgrow(publicationsTable, Priority.ALWAYS);
         return publicationsPane;
@@ -444,7 +513,7 @@ public class ProfessorPublicationsApp extends Application {
 
     private VBox buildDetailsPane() {
         Label publicationTitle = new Label("Dettaglio pubblicazione");
-        publicationTitle.setStyle("-fx-font-size: 16px; -fx-font-weight: bold;");
+        publicationTitle.getStyleClass().add("section-title");
 
         publicationDetailsArea = new TextArea();
         publicationDetailsArea.setEditable(false);
@@ -452,7 +521,7 @@ public class ProfessorPublicationsApp extends Application {
         publicationDetailsArea.setPrefRowCount(12);
 
         Label citationTitle = new Label("Citazioni e documenti citanti");
-        citationTitle.setStyle("-fx-font-size: 16px; -fx-font-weight: bold;");
+        citationTitle.getStyleClass().add("section-title");
 
         citationDetailsArea = new TextArea();
         citationDetailsArea.setEditable(false);
@@ -466,6 +535,7 @@ public class ProfessorPublicationsApp extends Application {
                 citationTitle,
                 citationDetailsArea
         );
+        detailsPane.getStyleClass().add("panel");
         detailsPane.setPadding(new Insets(10));
 
         VBox.setVgrow(publicationDetailsArea, Priority.ALWAYS);
@@ -475,13 +545,14 @@ public class ProfessorPublicationsApp extends Application {
     }
 
     private void showProfessorLookupDialog() {
-        List<ProfessorLookupEntry> entries = loadProfessorLookupEntries();
+        AtomicReference<List<ProfessorLookupEntry>> allEntries =
+                new AtomicReference<>(professorLookupRepository.findAll());
 
-        if (entries.isEmpty()) {
+        if (allEntries.get().isEmpty()) {
             updateStatus("Rubrica CF non disponibile o vuota.");
             showErrorAlert(
                     "Rubrica CF non disponibile",
-                    "Controlla che esista il file src/main/resources/lookup/professors-cf.csv."
+                    "Controlla che il file CSV locale sia disponibile."
             );
             return;
         }
@@ -491,60 +562,102 @@ public class ProfessorPublicationsApp extends Application {
         dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
         dialog.setResizable(true);
 
-        Label infoLabel = new Label("Seleziona una riga per cercare il professore tramite Codice fiscale.");
+        Label infoLabel = new Label(
+                "Seleziona una riga per cercare il professore tramite Codice fiscale. "
+                        + "Archivio locale: "
+                        + professorLookupRepository.getStoragePath()
+        );
+        infoLabel.setWrapText(true);
 
         TextField filterField = new TextField();
         filterField.setPromptText("Filtra per nome, cognome o codice fiscale");
 
-        ObservableList<ProfessorLookupEntry> filteredEntries = FXCollections.observableArrayList(entries);
+        ObservableList<ProfessorLookupEntry> filteredEntries =
+                FXCollections.observableArrayList(allEntries.get());
 
         TableView<ProfessorLookupEntry> lookupTable = new TableView<>();
         lookupTable.setItems(filteredEntries);
         lookupTable.getSelectionModel().setSelectionMode(SelectionMode.SINGLE);
-        lookupTable.setPrefSize(680, 420);
+        lookupTable.setPrefSize(760, 430);
 
         TableColumn<ProfessorLookupEntry, String> nameColumn = new TableColumn<>("Nome");
         nameColumn.setCellValueFactory(cellData ->
                 new ReadOnlyStringWrapper(cellData.getValue().nome())
         );
-        nameColumn.setPrefWidth(190);
+        nameColumn.setPrefWidth(210);
 
         TableColumn<ProfessorLookupEntry, String> surnameColumn = new TableColumn<>("Cognome");
         surnameColumn.setCellValueFactory(cellData ->
                 new ReadOnlyStringWrapper(cellData.getValue().cognome())
         );
-        surnameColumn.setPrefWidth(220);
+        surnameColumn.setPrefWidth(240);
 
         TableColumn<ProfessorLookupEntry, String> fiscalCodeColumn = new TableColumn<>("Codice Fiscale");
         fiscalCodeColumn.setCellValueFactory(cellData ->
                 new ReadOnlyStringWrapper(cellData.getValue().codiceFiscale())
         );
-        fiscalCodeColumn.setPrefWidth(220);
+        fiscalCodeColumn.setPrefWidth(240);
 
         lookupTable.getColumns().add(nameColumn);
         lookupTable.getColumns().add(surnameColumn);
         lookupTable.getColumns().add(fiscalCodeColumn);
 
         Button useButton = new Button("Usa per ricerca");
+        useButton.getStyleClass().add("primary-button");
+
+        Button addButton = new Button("Aggiungi docente");
+        addButton.getStyleClass().add("success-button");
+
         useButton.setDisable(true);
 
         lookupTable.getSelectionModel().selectedItemProperty().addListener((obs, oldValue, newValue) ->
                 useButton.setDisable(newValue == null)
         );
 
-        filterField.textProperty().addListener((obs, oldValue, newValue) -> {
-            String query = newValue != null ? newValue.trim() : "";
+        filterField.textProperty().addListener((obs, oldValue, newValue) ->
+                refreshLookupTable(filteredEntries, allEntries.get(), newValue)
+        );
 
-            if (query.isBlank()) {
-                filteredEntries.setAll(entries);
-                return;
-            }
+        lookupTable.setRowFactory(table -> {
+            TableRow<ProfessorLookupEntry> row = new TableRow<>();
 
-            filteredEntries.setAll(
-                    entries.stream()
-                            .filter(entry -> entry.matches(query))
-                            .toList()
+            MenuItem editItem = new MenuItem("Modifica dati docente");
+            ContextMenu contextMenu = new ContextMenu(editItem);
+
+            editItem.setOnAction(event -> {
+                ProfessorLookupEntry selectedEntry = row.getItem();
+
+                if (selectedEntry == null) {
+                    return;
+                }
+
+                Optional<ProfessorLookupEntry> editedEntry =
+                        showProfessorLookupEntryEditorDialog("Modifica docente", selectedEntry);
+
+                if (editedEntry.isEmpty()) {
+                    return;
+                }
+
+                try {
+                    professorLookupRepository.update(selectedEntry, editedEntry.get());
+                    allEntries.set(professorLookupRepository.findAll());
+                    refreshLookupTable(filteredEntries, allEntries.get(), filterField.getText());
+
+                    updateStatus("Docente aggiornato nella rubrica CF: "
+                            + editedEntry.get().nome()
+                            + " "
+                            + editedEntry.get().cognome()
+                            + ".");
+                } catch (IOException | IllegalArgumentException e) {
+                    showErrorAlert("Errore modifica docente", e.getMessage());
+                }
+            });
+
+            row.emptyProperty().addListener((obs, wasEmpty, isEmpty) ->
+                    row.setContextMenu(isEmpty ? null : contextMenu)
             );
+
+            return row;
         });
 
         useButton.setOnAction(event -> {
@@ -566,13 +679,35 @@ public class ProfessorPublicationsApp extends Application {
             searchProfessor();
         });
 
-        Button closeButton = new Button("Chiudi");
-        closeButton.setOnAction(event -> dialog.close());
+        addButton.setOnAction(event -> {
+            Optional<ProfessorLookupEntry> newEntry =
+                    showProfessorLookupEntryEditorDialog("Aggiungi docente", null);
 
-        HBox actionBar = new HBox(10, useButton, closeButton);
+            if (newEntry.isEmpty()) {
+                return;
+            }
+
+            try {
+                professorLookupRepository.add(newEntry.get());
+                allEntries.set(professorLookupRepository.findAll());
+                refreshLookupTable(filteredEntries, allEntries.get(), filterField.getText());
+
+                updateStatus("Docente aggiunto alla rubrica CF: "
+                        + newEntry.get().nome()
+                        + " "
+                        + newEntry.get().cognome()
+                        + ".");
+            } catch (IOException | IllegalArgumentException e) {
+                showErrorAlert("Errore aggiunta docente", e.getMessage());
+            }
+        });
+
+        HBox actionBar = new HBox(10, addButton, useButton);
+        actionBar.getStyleClass().add("dialog-actions");
         actionBar.setAlignment(Pos.CENTER_RIGHT);
 
         VBox content = new VBox(10, infoLabel, filterField, lookupTable, actionBar);
+        content.getStyleClass().add("dialog-content");
         content.setPadding(new Insets(10));
         VBox.setVgrow(lookupTable, Priority.ALWAYS);
 
@@ -580,61 +715,194 @@ public class ProfessorPublicationsApp extends Application {
         dialog.showAndWait();
     }
 
-    private List<ProfessorLookupEntry> loadProfessorLookupEntries() {
-        List<ProfessorLookupEntry> entries = new ArrayList<>();
+    private Optional<ProfessorLookupEntry> showProfessorLookupEntryEditorDialog(
+            String title,
+            ProfessorLookupEntry initialValue
+    ) {
+        Dialog<ProfessorLookupEntry> dialog = new Dialog<>();
+        dialog.setTitle(title);
+        dialog.setResizable(true);
 
-        try (InputStream inputStream = getClass().getResourceAsStream("/lookup/professors-cf.csv")) {
-            if (inputStream == null) {
-                return List.of();
-            }
+        ButtonType saveButtonType = new ButtonType("Salva", ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().addAll(saveButtonType, ButtonType.CANCEL);
 
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(inputStream, StandardCharsets.UTF_8)
-            )) {
-                String line;
-                boolean firstLine = true;
+        TextField nameField = new TextField();
+        nameField.setPromptText("Nome");
 
-                while ((line = reader.readLine()) != null) {
-                    if (firstLine) {
-                        firstLine = false;
-                        continue;
-                    }
+        TextField surnameField = new TextField();
+        surnameField.setPromptText("Cognome");
 
-                    if (line.isBlank()) {
-                        continue;
-                    }
+        TextField fiscalCodeField = new TextField();
+        fiscalCodeField.setPromptText("Codice fiscale");
 
-                    String[] parts = line.split(";", -1);
-
-                    if (parts.length < 3) {
-                        continue;
-                    }
-
-                    String nome = parts[0].trim();
-                    String cognome = parts[1].trim();
-                    String codiceFiscale = parts[2].trim().toUpperCase();
-
-                    if (!nome.isBlank() && !cognome.isBlank() && !codiceFiscale.isBlank()) {
-                        entries.add(new ProfessorLookupEntry(nome, cognome, codiceFiscale));
-                    }
-                }
-            }
-
-        } catch (IOException e) {
-            return List.of();
+        if (initialValue != null) {
+            nameField.setText(initialValue.nome());
+            surnameField.setText(initialValue.cognome());
+            fiscalCodeField.setText(initialValue.codiceFiscale());
         }
 
-        return entries.stream()
-                .sorted(
-                        Comparator.comparing(
-                                ProfessorLookupEntry::cognome,
-                                String.CASE_INSENSITIVE_ORDER
-                        ).thenComparing(
-                                ProfessorLookupEntry::nome,
-                                String.CASE_INSENSITIVE_ORDER
-                        )
-                )
+        fiscalCodeField.textProperty().addListener((obs, oldValue, newValue) -> {
+            if (newValue == null) {
+                return;
+            }
+
+            String upper = newValue.toUpperCase().trim();
+
+            if (!upper.equals(newValue)) {
+                fiscalCodeField.setText(upper);
+            }
+        });
+
+        VBox content = new VBox(
+                8,
+                new Label("Nome"),
+                nameField,
+                new Label("Cognome"),
+                surnameField,
+                new Label("Codice fiscale"),
+                fiscalCodeField
+        );
+        content.getStyleClass().add("dialog-content");
+        content.setPadding(new Insets(10));
+        content.setPrefWidth(420);
+
+        dialog.getDialogPane().setContent(content);
+
+        Button saveButton = (Button) dialog.getDialogPane().lookupButton(saveButtonType);
+        saveButton.addEventFilter(ActionEvent.ACTION, event -> {
+            String validationError = validateLookupInput(
+                    nameField.getText(),
+                    surnameField.getText(),
+                    fiscalCodeField.getText()
+            );
+
+            if (validationError != null) {
+                showErrorAlert("Dati non validi", validationError);
+                event.consume();
+            }
+        });
+
+        dialog.setResultConverter(buttonType -> {
+            if (buttonType != saveButtonType) {
+                return null;
+            }
+
+            return new ProfessorLookupEntry(
+                    nameField.getText(),
+                    surnameField.getText(),
+                    fiscalCodeField.getText()
+            );
+        });
+
+        return dialog.showAndWait();
+    }
+
+    private String validateLookupInput(String nome, String cognome, String codiceFiscale) {
+        if (nome == null || nome.trim().isBlank()) {
+            return "Il nome è obbligatorio.";
+        }
+
+        if (cognome == null || cognome.trim().isBlank()) {
+            return "Il cognome è obbligatorio.";
+        }
+
+        if (codiceFiscale == null || codiceFiscale.trim().isBlank()) {
+            return "Il codice fiscale è obbligatorio.";
+        }
+
+        String normalizedFiscalCode = codiceFiscale.trim().toUpperCase();
+
+        if (!normalizedFiscalCode.matches("[A-Z0-9]{16}")) {
+            return "Il codice fiscale deve contenere 16 caratteri alfanumerici.";
+        }
+
+        return null;
+    }
+
+    private void refreshLookupTable(
+            ObservableList<ProfessorLookupEntry> filteredEntries,
+            List<ProfessorLookupEntry> allEntries,
+            String query
+    ) {
+        String normalizedQuery = query != null ? query.trim() : "";
+
+        if (normalizedQuery.isBlank()) {
+            filteredEntries.setAll(allEntries);
+            return;
+        }
+
+        filteredEntries.setAll(
+                allEntries.stream()
+                        .filter(entry -> entry.matches(normalizedQuery))
+                        .toList()
+        );
+    }
+
+    private void applyPublicationFilter() {
+        if (publicationFilterField == null) {
+            publicationItems.setAll(allPublicationItems);
+            return;
+        }
+
+        String query = publicationFilterField.getText() != null
+                ? publicationFilterField.getText().trim().toLowerCase()
+                : "";
+
+        if (query.isBlank()) {
+            publicationItems.setAll(allPublicationItems);
+            selectFirstPublicationIfAvailable();
+            return;
+        }
+
+        List<Publication> filteredPublications = allPublicationItems.stream()
+                .filter(publication -> publicationMatchesFilter(publication, query))
                 .toList();
+
+        publicationItems.setAll(filteredPublications);
+        selectFirstPublicationIfAvailable();
+    }
+
+    private boolean publicationMatchesFilter(Publication publication, String query) {
+        if (publication == null) {
+            return false;
+        }
+
+        String title = publication.title() != null ? publication.title().toLowerCase() : "";
+        String year = publication.year() != null ? String.valueOf(publication.year()) : "";
+        String venue = publication.venue() != null ? publication.venue().toLowerCase() : "";
+        String doi = publication.doi() != null ? publication.doi().toLowerCase() : "";
+        String authors = publication.authors() != null
+                ? String.join(" ", publication.authors()).toLowerCase()
+                : "";
+
+        return title.contains(query)
+                || year.contains(query)
+                || venue.contains(query)
+                || doi.contains(query)
+                || authors.contains(query);
+    }
+
+    private void setPublicationItems(List<Publication> publications) {
+        allPublicationItems.clear();
+        allPublicationItems.addAll(publications);
+
+        if (publicationFilterField != null) {
+            publicationFilterField.clear();
+        }
+
+        publicationItems.setAll(allPublicationItems);
+        selectFirstPublicationIfAvailable();
+    }
+
+    private void selectFirstPublicationIfAvailable() {
+        if (!publicationItems.isEmpty()) {
+            publicationsTable.getSelectionModel().selectFirst();
+        } else {
+            resetPublicationDetails();
+            resetCitationDetails();
+        }
+
+        publicationsTable.refresh();
     }
 
     private void searchProfessor() {
@@ -659,6 +927,12 @@ public class ProfessorPublicationsApp extends Application {
         if (results.isEmpty()) {
             selectedProfessor = null;
             publicationItems.clear();
+            allPublicationItems.clear();
+
+            if (publicationFilterField != null) {
+                publicationFilterField.clear();
+            }
+
             resetProfessorSection();
             resetPublicationDetails();
             resetCitationDetails();
@@ -672,14 +946,8 @@ public class ProfessorPublicationsApp extends Application {
         List<Publication> cachedPublications = sortPublicationsByYearDesc(
                 publicationCatalogService.getCachedPublications(selectedProfessor)
         );
-        publicationItems.setAll(cachedPublications);
 
-        if (!publicationItems.isEmpty()) {
-            publicationsTable.getSelectionModel().selectFirst();
-        } else {
-            resetPublicationDetails();
-            resetCitationDetails();
-        }
+        setPublicationItems(cachedPublications);
 
         updateStatus("Professore caricato. Pubblicazioni in cache: " + publicationItems.size() + ".");
     }
@@ -702,15 +970,13 @@ public class ProfessorPublicationsApp extends Application {
         List<Publication> publications = sortPublicationsByYearDesc(
                 publicationCatalogService.refreshPublicationsFromIris(selectedProfessor)
         );
-        publicationItems.setAll(publications);
+
+        setPublicationItems(publications);
 
         if (!publicationItems.isEmpty()) {
-            publicationsTable.getSelectionModel().selectFirst();
             updateStatus("Pubblicazioni IRIS aggiornate: " + publications.size() + ".");
             askForCitationRefresh();
         } else {
-            resetPublicationDetails();
-            resetCitationDetails();
             updateStatus("Nessuna pubblicazione trovata su IRIS.");
         }
     }
@@ -792,15 +1058,19 @@ public class ProfessorPublicationsApp extends Application {
         bibtexArea.setPrefSize(700, 350);
 
         Button copyButton = new Button("Copia BibTeX");
+        copyButton.getStyleClass().add("primary-button");
         copyButton.setOnAction(event -> copyBibtexToClipboard(bibtexEntry.rawBibtex()));
 
         Button saveButton = new Button("Salva .bib");
+        saveButton.getStyleClass().add("success-button");
         saveButton.setOnAction(event -> saveBibtexToFile(bibtexEntry));
 
         HBox actionBar = new HBox(10, copyButton, saveButton);
+        actionBar.getStyleClass().add("dialog-actions");
         actionBar.setAlignment(Pos.CENTER_LEFT);
 
         VBox dialogContent = new VBox(10, bibtexArea, actionBar);
+        dialogContent.getStyleClass().add("dialog-content");
         dialogContent.setPadding(new Insets(10));
         VBox.setVgrow(bibtexArea, Priority.ALWAYS);
 
@@ -849,7 +1119,7 @@ public class ProfessorPublicationsApp extends Application {
         Alert alert = new Alert(Alert.AlertType.ERROR);
         alert.setTitle(title);
         alert.setHeaderText(null);
-        alert.setContentText(message);
+        alert.setContentText(message != null ? message : "Errore non specificato.");
         alert.showAndWait();
     }
 
@@ -953,18 +1223,5 @@ public class ProfessorPublicationsApp extends Application {
 
     public static void main(String[] args) {
         launch(args);
-    }
-
-    private record ProfessorLookupEntry(String nome, String cognome, String codiceFiscale) {
-
-        private boolean matches(String query) {
-            String normalizedQuery = query.toLowerCase();
-
-            return nome.toLowerCase().contains(normalizedQuery)
-                    || cognome.toLowerCase().contains(normalizedQuery)
-                    || codiceFiscale.toLowerCase().contains(normalizedQuery)
-                    || (nome + " " + cognome).toLowerCase().contains(normalizedQuery)
-                    || (cognome + " " + nome).toLowerCase().contains(normalizedQuery);
-        }
     }
 }
