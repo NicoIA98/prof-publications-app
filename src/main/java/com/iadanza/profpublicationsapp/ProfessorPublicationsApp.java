@@ -88,11 +88,11 @@ import java.util.concurrent.atomic.AtomicReference;
 /**
  * Classe principale dell'applicazione JavaFX.
  *
- * D2-bis:
- * - filtro testuale sulle pubblicazioni IRIS;
- * - bottone BibTeX verde sulla pubblicazione selezionata;
- * - caricamento icona applicazione da resources/icons/app-icon.png;
- * - mantenimento rubrica CF modificabile.
+ * D3:
+ * - icona anche sulla finestra Rubrica CF;
+ * - barra superiore della Rubrica CF con filtro, Usa per ricerca e Aggiungi docente;
+ * - mantenimento filtro pubblicazioni IRIS;
+ * - mantenimento bottone BibTeX verde sulla riga selezionata.
  */
 public class ProfessorPublicationsApp extends Application {
 
@@ -297,6 +297,20 @@ public class ProfessorPublicationsApp extends Application {
         }
 
         stage.getIcons().add(new Image(iconUrl.toExternalForm()));
+    }
+
+    private void applyDialogIcon(Dialog<?> dialog) {
+        URL iconUrl = getClass().getResource("/icons/app-icon.png");
+
+        if (iconUrl == null) {
+            System.out.println("Icona dialog non trovata: /icons/app-icon.png");
+            return;
+        }
+
+        dialog.setOnShown(event -> {
+            Stage dialogStage = (Stage) dialog.getDialogPane().getScene().getWindow();
+            dialogStage.getIcons().add(new Image(iconUrl.toExternalForm()));
+        });
     }
 
     private void printAuthenticatedResult(AuthenticatedRestCallResult result) {
@@ -561,6 +575,7 @@ public class ProfessorPublicationsApp extends Application {
         dialog.setTitle("Rubrica CF");
         dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
         dialog.setResizable(true);
+        applyDialogIcon(dialog);
 
         Label infoLabel = new Label(
                 "Seleziona una riga per cercare il professore tramite Codice fiscale. "
@@ -571,6 +586,8 @@ public class ProfessorPublicationsApp extends Application {
 
         TextField filterField = new TextField();
         filterField.setPromptText("Filtra per nome, cognome o codice fiscale");
+        filterField.setPrefWidth(420);
+        HBox.setHgrow(filterField, Priority.ALWAYS);
 
         ObservableList<ProfessorLookupEntry> filteredEntries =
                 FXCollections.observableArrayList(allEntries.get());
@@ -578,25 +595,25 @@ public class ProfessorPublicationsApp extends Application {
         TableView<ProfessorLookupEntry> lookupTable = new TableView<>();
         lookupTable.setItems(filteredEntries);
         lookupTable.getSelectionModel().setSelectionMode(SelectionMode.SINGLE);
-        lookupTable.setPrefSize(760, 430);
+        lookupTable.setPrefSize(820, 430);
 
         TableColumn<ProfessorLookupEntry, String> nameColumn = new TableColumn<>("Nome");
         nameColumn.setCellValueFactory(cellData ->
                 new ReadOnlyStringWrapper(cellData.getValue().nome())
         );
-        nameColumn.setPrefWidth(210);
+        nameColumn.setPrefWidth(220);
 
         TableColumn<ProfessorLookupEntry, String> surnameColumn = new TableColumn<>("Cognome");
         surnameColumn.setCellValueFactory(cellData ->
                 new ReadOnlyStringWrapper(cellData.getValue().cognome())
         );
-        surnameColumn.setPrefWidth(240);
+        surnameColumn.setPrefWidth(260);
 
         TableColumn<ProfessorLookupEntry, String> fiscalCodeColumn = new TableColumn<>("Codice Fiscale");
         fiscalCodeColumn.setCellValueFactory(cellData ->
                 new ReadOnlyStringWrapper(cellData.getValue().codiceFiscale())
         );
-        fiscalCodeColumn.setPrefWidth(240);
+        fiscalCodeColumn.setPrefWidth(260);
 
         lookupTable.getColumns().add(nameColumn);
         lookupTable.getColumns().add(surnameColumn);
@@ -604,11 +621,13 @@ public class ProfessorPublicationsApp extends Application {
 
         Button useButton = new Button("Usa per ricerca");
         useButton.getStyleClass().add("primary-button");
+        useButton.setDisable(true);
 
         Button addButton = new Button("Aggiungi docente");
         addButton.getStyleClass().add("success-button");
 
-        useButton.setDisable(true);
+        HBox lookupToolbar = new HBox(10, filterField, useButton, addButton);
+        lookupToolbar.setAlignment(Pos.CENTER_LEFT);
 
         lookupTable.getSelectionModel().selectedItemProperty().addListener((obs, oldValue, newValue) ->
                 useButton.setDisable(newValue == null)
@@ -702,11 +721,7 @@ public class ProfessorPublicationsApp extends Application {
             }
         });
 
-        HBox actionBar = new HBox(10, addButton, useButton);
-        actionBar.getStyleClass().add("dialog-actions");
-        actionBar.setAlignment(Pos.CENTER_RIGHT);
-
-        VBox content = new VBox(10, infoLabel, filterField, lookupTable, actionBar);
+        VBox content = new VBox(10, infoLabel, lookupToolbar, lookupTable);
         content.getStyleClass().add("dialog-content");
         content.setPadding(new Insets(10));
         VBox.setVgrow(lookupTable, Priority.ALWAYS);
@@ -722,6 +737,7 @@ public class ProfessorPublicationsApp extends Application {
         Dialog<ProfessorLookupEntry> dialog = new Dialog<>();
         dialog.setTitle(title);
         dialog.setResizable(true);
+        applyDialogIcon(dialog);
 
         ButtonType saveButtonType = new ButtonType("Salva", ButtonBar.ButtonData.OK_DONE);
         dialog.getDialogPane().getButtonTypes().addAll(saveButtonType, ButtonType.CANCEL);
@@ -1051,6 +1067,7 @@ public class ProfessorPublicationsApp extends Application {
         dialog.setTitle("BibTeX - " + publication.title());
         dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
         dialog.setResizable(true);
+        applyDialogIcon(dialog);
 
         TextArea bibtexArea = new TextArea(bibtexEntry.rawBibtex());
         bibtexArea.setEditable(false);
