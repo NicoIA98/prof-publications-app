@@ -17,3 +17,14 @@ Thumbs.db
 .env
 *.env
 !.env.example
+
+# Database SQLite locale generato dall'app
+prof-publications.db
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+*.sqlite-journal
+
+# Eventuale cartella locale dell'app se venisse creata per errore dentro il progetto
+.prof-publications-app/
