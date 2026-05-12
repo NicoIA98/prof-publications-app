@@ -89,12 +89,12 @@ import java.util.concurrent.atomic.AtomicReference;
 /**
  * Classe principale dell'applicazione JavaFX.
  *
- * D4:
- * - menu tasto destro Rubrica CF con:
- *   1) Modifica dati docente
- *   2) Elimina dati docente
- * - conferma prima dell'eliminazione;
- * - aggiornamento immediato della tabella e del CSV locale.
+ * D5:
+ * - rubrica CF privacy-friendly;
+ * - il CSV versionato deve essere vuoto, con sola intestazione;
+ * - la rubrica si apre anche senza docenti;
+ * - pulsante Aiuto nella Rubrica CF;
+ * - dati salvati solo nel CSV locale dell'utente.
  */
 public class ProfessorPublicationsApp extends Application {
 
@@ -564,15 +564,6 @@ public class ProfessorPublicationsApp extends Application {
         AtomicReference<List<ProfessorLookupEntry>> allEntries =
                 new AtomicReference<>(professorLookupRepository.findAll());
 
-        if (allEntries.get().isEmpty()) {
-            updateStatus("Rubrica CF non disponibile o vuota.");
-            showErrorAlert(
-                    "Rubrica CF non disponibile",
-                    "Controlla che il file CSV locale sia disponibile."
-            );
-            return;
-        }
-
         Dialog<Void> dialog = new Dialog<>();
         dialog.setTitle("Rubrica CF");
         dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
@@ -580,7 +571,7 @@ public class ProfessorPublicationsApp extends Application {
         applyDialogIcon(dialog);
 
         Label infoLabel = new Label(
-                "Seleziona una riga per cercare il professore tramite Codice fiscale. "
+                "Rubrica locale personale. I dati inseriti restano salvati solo su questo PC. "
                         + "Archivio locale: "
                         + professorLookupRepository.getStoragePath()
         );
@@ -597,7 +588,7 @@ public class ProfessorPublicationsApp extends Application {
         TableView<ProfessorLookupEntry> lookupTable = new TableView<>();
         lookupTable.setItems(filteredEntries);
         lookupTable.getSelectionModel().setSelectionMode(SelectionMode.SINGLE);
-        lookupTable.setPrefSize(820, 430);
+        lookupTable.setPrefSize(860, 430);
 
         TableColumn<ProfessorLookupEntry, String> nameColumn = new TableColumn<>("Nome");
         nameColumn.setCellValueFactory(cellData ->
@@ -628,7 +619,10 @@ public class ProfessorPublicationsApp extends Application {
         Button addButton = new Button("Aggiungi docente");
         addButton.getStyleClass().add("success-button");
 
-        HBox lookupToolbar = new HBox(10, filterField, useButton, addButton);
+        Button helpButton = new Button("Aiuto");
+        helpButton.getStyleClass().add("secondary-button");
+
+        HBox lookupToolbar = new HBox(10, filterField, useButton, addButton, helpButton);
         lookupToolbar.setAlignment(Pos.CENTER_LEFT);
 
         lookupTable.getSelectionModel().selectedItemProperty().addListener((obs, oldValue, newValue) ->
@@ -757,10 +751,72 @@ public class ProfessorPublicationsApp extends Application {
             }
         });
 
+        helpButton.setOnAction(event -> showProfessorLookupHelpDialog());
+
         VBox content = new VBox(10, infoLabel, lookupToolbar, lookupTable);
         content.getStyleClass().add("dialog-content");
         content.setPadding(new Insets(10));
         VBox.setVgrow(lookupTable, Priority.ALWAYS);
+
+        dialog.getDialogPane().setContent(content);
+        dialog.showAndWait();
+    }
+
+    private void showProfessorLookupHelpDialog() {
+        Dialog<Void> dialog = new Dialog<>();
+        dialog.setTitle("Aiuto Rubrica CF");
+        dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
+        dialog.setResizable(true);
+        applyDialogIcon(dialog);
+
+        TextArea helpArea = new TextArea();
+        helpArea.setEditable(false);
+        helpArea.setWrapText(true);
+        helpArea.setPrefSize(640, 420);
+
+        helpArea.setText("""
+                Rubrica CF - Guida rapida
+
+                La Rubrica CF è una rubrica locale e personale.
+                Per motivi di privacy, l'applicazione viene distribuita con una rubrica vuota.
+                I codici fiscali dei docenti non vengono pubblicati nel progetto e non vengono caricati da Git.
+
+                Dove vengono salvati i dati?
+                I docenti che inserisci vengono salvati solo sul tuo PC, nel file locale:
+
+                %s
+
+                Come aggiungere un docente
+                1. Premi "Aggiungi docente".
+                2. Inserisci Nome, Cognome e Codice Fiscale.
+                3. Premi "Salva".
+                4. Il docente comparirà nella tabella.
+
+                Come modificare un docente
+                1. Fai tasto destro sulla riga del docente.
+                2. Seleziona "Modifica dati docente".
+                3. Correggi i dati e premi "Salva".
+
+                Come eliminare un docente
+                1. Fai tasto destro sulla riga del docente.
+                2. Seleziona "Elimina dati docente".
+                3. Conferma l'eliminazione.
+
+                Come cercare un docente
+                1. Usa il filtro in alto per cercare per nome, cognome o codice fiscale.
+                2. Seleziona la riga.
+                3. Premi "Usa per ricerca".
+                4. L'app imposterà automaticamente la ricerca per Codice fiscale.
+
+                Nota importante
+                Inserisci solo dati che sei autorizzato a utilizzare.
+                I dati restano locali e non vengono inviati a Git.
+                """.formatted(professorLookupRepository.getStoragePath()));
+
+        VBox content = new VBox(10, helpArea);
+        content.getStyleClass().add("dialog-content");
+        content.setPadding(new Insets(10));
+        VBox.setVgrow(helpArea, Priority.ALWAYS);
 
         dialog.getDialogPane().setContent(content);
         dialog.showAndWait();

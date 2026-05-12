@@ -5,8 +5,6 @@ import com.iadanza.profpublicationsapp.domain.model.ProfessorLookupEntry;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -15,27 +13,28 @@ import java.util.Comparator;
 import java.util.List;
 
 /**
- * Repository CSV modificabile per la rubrica Codici Fiscali.
+ * Repository CSV modificabile per la Rubrica CF.
  *
- * Il file iniziale resta in resources/lookup/professors-cf.csv.
- * Alla prima esecuzione viene copiato nella cartella utente:
+ * Scelta privacy-friendly:
+ * - il progetto NON distribuisce codici fiscali reali;
+ * - al primo avvio viene creato un CSV locale vuoto;
+ * - i dati inseriti dall'utente restano solo sul suo PC;
+ * - il file locale è:
  *
- * Windows:
- * C:\Users\<utente>\.prof-publications-app\professors-cf.csv
+ *   C:\Users\<utente>\.prof-publications-app\professors-cf.csv
  *
- * In questo modo l'app può aggiungere, modificare ed eliminare righe
- * anche quando verrà distribuita come jar.
+ * Nota:
+ * Il parametro initialResourcePath resta nel costruttore per compatibilità
+ * con il codice esistente, ma non viene usato per copiare dati seed.
  */
 public class CsvProfessorLookupRepository implements ProfessorLookupRepository {
 
     private static final String HEADER = "nome;cognome;codiceFiscale";
 
-    private final String initialResourcePath;
     private final Path storageDirectory;
     private final Path storagePath;
 
     public CsvProfessorLookupRepository(String initialResourcePath) {
-        this.initialResourcePath = initialResourcePath;
         this.storageDirectory = Path.of(
                 System.getProperty("user.home"),
                 ".prof-publications-app"
@@ -43,6 +42,8 @@ public class CsvProfessorLookupRepository implements ProfessorLookupRepository {
         this.storagePath = storageDirectory.resolve("professors-cf.csv");
 
         ensureLocalCsvExists();
+
+        System.out.println("Rubrica CF locale: " + storagePath);
     }
 
     @Override
@@ -84,6 +85,7 @@ public class CsvProfessorLookupRepository implements ProfessorLookupRepository {
                 }
             }
         } catch (IOException e) {
+            System.out.println("Errore lettura Rubrica CF locale: " + e.getMessage());
             return List.of();
         }
 
@@ -168,24 +170,13 @@ public class CsvProfessorLookupRepository implements ProfessorLookupRepository {
                 return;
             }
 
-            try (InputStream inputStream = getClass().getResourceAsStream(initialResourcePath)) {
-                if (inputStream == null) {
-                    Files.writeString(storagePath, HEADER + System.lineSeparator(), StandardCharsets.UTF_8);
-                    return;
-                }
+            Files.writeString(
+                    storagePath,
+                    HEADER + System.lineSeparator(),
+                    StandardCharsets.UTF_8
+            );
 
-                try (BufferedReader reader = new BufferedReader(
-                        new InputStreamReader(inputStream, StandardCharsets.UTF_8)
-                );
-                     BufferedWriter writer = Files.newBufferedWriter(storagePath, StandardCharsets.UTF_8)
-                ) {
-                    String line;
-                    while ((line = reader.readLine()) != null) {
-                        writer.write(line);
-                        writer.newLine();
-                    }
-                }
-            }
+            System.out.println("Rubrica CF locale creata vuota: " + storagePath);
         } catch (IOException e) {
             throw new IllegalStateException("Impossibile inizializzare la rubrica locale CF.", e);
         }
