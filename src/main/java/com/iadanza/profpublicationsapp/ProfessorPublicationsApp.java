@@ -57,6 +57,7 @@ import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.SelectionMode;
+import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.control.SplitPane;
 import javafx.scene.control.TableCell;
 import javafx.scene.control.TableColumn;
@@ -88,11 +89,12 @@ import java.util.concurrent.atomic.AtomicReference;
 /**
  * Classe principale dell'applicazione JavaFX.
  *
- * D3:
- * - icona anche sulla finestra Rubrica CF;
- * - barra superiore della Rubrica CF con filtro, Usa per ricerca e Aggiungi docente;
- * - mantenimento filtro pubblicazioni IRIS;
- * - mantenimento bottone BibTeX verde sulla riga selezionata.
+ * D4:
+ * - menu tasto destro Rubrica CF con:
+ *   1) Modifica dati docente
+ *   2) Elimina dati docente
+ * - conferma prima dell'eliminazione;
+ * - aggiornamento immediato della tabella e del CSV locale.
  */
 public class ProfessorPublicationsApp extends Application {
 
@@ -641,7 +643,12 @@ public class ProfessorPublicationsApp extends Application {
             TableRow<ProfessorLookupEntry> row = new TableRow<>();
 
             MenuItem editItem = new MenuItem("Modifica dati docente");
-            ContextMenu contextMenu = new ContextMenu(editItem);
+            MenuItem deleteItem = new MenuItem("Elimina dati docente");
+            ContextMenu contextMenu = new ContextMenu(
+                    editItem,
+                    new SeparatorMenuItem(),
+                    deleteItem
+            );
 
             editItem.setOnAction(event -> {
                 ProfessorLookupEntry selectedEntry = row.getItem();
@@ -669,6 +676,35 @@ public class ProfessorPublicationsApp extends Application {
                             + ".");
                 } catch (IOException | IllegalArgumentException e) {
                     showErrorAlert("Errore modifica docente", e.getMessage());
+                }
+            });
+
+            deleteItem.setOnAction(event -> {
+                ProfessorLookupEntry selectedEntry = row.getItem();
+
+                if (selectedEntry == null) {
+                    return;
+                }
+
+                boolean confirmed = confirmDeleteProfessorLookupEntry(selectedEntry);
+
+                if (!confirmed) {
+                    updateStatus("Eliminazione docente annullata.");
+                    return;
+                }
+
+                try {
+                    professorLookupRepository.delete(selectedEntry);
+                    allEntries.set(professorLookupRepository.findAll());
+                    refreshLookupTable(filteredEntries, allEntries.get(), filterField.getText());
+
+                    updateStatus("Docente eliminato dalla rubrica CF: "
+                            + selectedEntry.nome()
+                            + " "
+                            + selectedEntry.cognome()
+                            + ".");
+                } catch (IOException | IllegalArgumentException e) {
+                    showErrorAlert("Errore eliminazione docente", e.getMessage());
                 }
             });
 
@@ -728,6 +764,25 @@ public class ProfessorPublicationsApp extends Application {
 
         dialog.getDialogPane().setContent(content);
         dialog.showAndWait();
+    }
+
+    private boolean confirmDeleteProfessorLookupEntry(ProfessorLookupEntry entry) {
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+        alert.setTitle("Elimina docente");
+        alert.setHeaderText("Vuoi eliminare questo docente dalla rubrica?");
+        alert.setContentText(
+                entry.nome()
+                        + " "
+                        + entry.cognome()
+                        + "\nCodice fiscale: "
+                        + entry.codiceFiscale()
+        );
+
+        applyDialogIcon(alert);
+
+        Optional<ButtonType> result = alert.showAndWait();
+
+        return result.isPresent() && result.get() == ButtonType.OK;
     }
 
     private Optional<ProfessorLookupEntry> showProfessorLookupEntryEditorDialog(
@@ -1037,6 +1092,7 @@ public class ProfessorPublicationsApp extends Application {
         alert.setTitle("Aggiornamento indici citazionali");
         alert.setHeaderText("Pubblicazioni IRIS aggiornate");
         alert.setContentText("Vuoi aggiornare ora gli indici citazionali da Scopus e Scholar?");
+        applyDialogIcon(alert);
 
         Optional<ButtonType> result = alert.showAndWait();
 
@@ -1137,6 +1193,7 @@ public class ProfessorPublicationsApp extends Application {
         alert.setTitle(title);
         alert.setHeaderText(null);
         alert.setContentText(message != null ? message : "Errore non specificato.");
+        applyDialogIcon(alert);
         alert.showAndWait();
     }
 

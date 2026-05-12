@@ -23,7 +23,8 @@ import java.util.List;
  * Windows:
  * C:\Users\<utente>\.prof-publications-app\professors-cf.csv
  *
- * In questo modo l'app può aggiungere/modificare righe anche quando verrà distribuita come jar.
+ * In questo modo l'app può aggiungere, modificare ed eliminare righe
+ * anche quando verrà distribuita come jar.
  */
 public class CsvProfessorLookupRepository implements ProfessorLookupRepository {
 
@@ -136,6 +137,21 @@ public class CsvProfessorLookupRepository implements ProfessorLookupRepository {
         }
 
         entries.set(indexToUpdate, newEntry);
+        writeAll(entries);
+    }
+
+    @Override
+    public void delete(ProfessorLookupEntry entry) throws IOException {
+        ensureLocalCsvExists();
+
+        List<ProfessorLookupEntry> entries = new ArrayList<>(findAll());
+
+        boolean removed = entries.removeIf(existing -> existing.equals(entry));
+
+        if (!removed) {
+            throw new IllegalArgumentException("Docente non trovato nella rubrica locale.");
+        }
+
         writeAll(entries);
     }
 

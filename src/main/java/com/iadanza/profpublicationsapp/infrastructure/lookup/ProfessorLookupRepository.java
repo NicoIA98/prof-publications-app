@@ -14,5 +14,7 @@ public interface ProfessorLookupRepository {
 
     void update(ProfessorLookupEntry oldEntry, ProfessorLookupEntry newEntry) throws IOException;
 
+    void delete(ProfessorLookupEntry entry) throws IOException;
+
     Path getStoragePath();
 }
