@@ -89,12 +89,11 @@ import java.util.concurrent.atomic.AtomicReference;
 /**
  * Classe principale dell'applicazione JavaFX.
  *
- * D5:
- * - rubrica CF privacy-friendly;
- * - il CSV versionato deve essere vuoto, con sola intestazione;
- * - la rubrica si apre anche senza docenti;
- * - pulsante Aiuto nella Rubrica CF;
- * - dati salvati solo nel CSV locale dell'utente.
+ * D6:
+ * - Rubrica CF privacy-friendly;
+ * - pulsante Aiuto spostato in basso a sinistra;
+ * - stile dedicato per il pulsante Aiuto;
+ * - testo guida aggiornato con nota "I DATI RESTANO LOCALI".
  */
 public class ProfessorPublicationsApp extends Application {
 
@@ -619,11 +618,15 @@ public class ProfessorPublicationsApp extends Application {
         Button addButton = new Button("Aggiungi docente");
         addButton.getStyleClass().add("success-button");
 
-        Button helpButton = new Button("Aiuto");
-        helpButton.getStyleClass().add("secondary-button");
+        Button helpButton = new Button("? Aiuto");
+        helpButton.getStyleClass().add("help-button");
 
-        HBox lookupToolbar = new HBox(10, filterField, useButton, addButton, helpButton);
+        HBox lookupToolbar = new HBox(10, filterField, useButton, addButton);
         lookupToolbar.setAlignment(Pos.CENTER_LEFT);
+
+        HBox lookupBottomBar = new HBox(helpButton);
+        lookupBottomBar.getStyleClass().add("lookup-bottom-bar");
+        lookupBottomBar.setAlignment(Pos.CENTER_LEFT);
 
         lookupTable.getSelectionModel().selectedItemProperty().addListener((obs, oldValue, newValue) ->
                 useButton.setDisable(newValue == null)
@@ -753,7 +756,7 @@ public class ProfessorPublicationsApp extends Application {
 
         helpButton.setOnAction(event -> showProfessorLookupHelpDialog());
 
-        VBox content = new VBox(10, infoLabel, lookupToolbar, lookupTable);
+        VBox content = new VBox(10, infoLabel, lookupToolbar, lookupTable, lookupBottomBar);
         content.getStyleClass().add("dialog-content");
         content.setPadding(new Insets(10));
         VBox.setVgrow(lookupTable, Priority.ALWAYS);
@@ -779,7 +782,6 @@ public class ProfessorPublicationsApp extends Application {
 
                 La Rubrica CF è una rubrica locale e personale.
                 Per motivi di privacy, l'applicazione viene distribuita con una rubrica vuota.
-                I codici fiscali dei docenti non vengono pubblicati nel progetto e non vengono caricati da Git.
 
                 Dove vengono salvati i dati?
                 I docenti che inserisci vengono salvati solo sul tuo PC, nel file locale:
@@ -808,9 +810,7 @@ public class ProfessorPublicationsApp extends Application {
                 3. Premi "Usa per ricerca".
                 4. L'app imposterà automaticamente la ricerca per Codice fiscale.
 
-                Nota importante
-                Inserisci solo dati che sei autorizzato a utilizzare.
-                I dati restano locali e non vengono inviati a Git.
+                Nota importante: I DATI RESTANO LOCALI
                 """.formatted(professorLookupRepository.getStoragePath()));
 
         VBox content = new VBox(10, helpArea);

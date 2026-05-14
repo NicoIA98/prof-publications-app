@@ -180,3 +180,21 @@
 .bibtex-selected-button:hover {
     -fx-background-color: #15803d;
 }
+
+.help-button {
+    -fx-background-color: #facc15;
+    -fx-text-fill: #422006;
+    -fx-font-weight: bold;
+    -fx-border-color: #eab308;
+    -fx-background-radius: 7px;
+    -fx-border-radius: 7px;
+}
+
+.help-button:hover {
+    -fx-background-color: #eab308;
+}
+
+.lookup-bottom-bar {
+    -fx-padding: 4px 0 0 0;
+    -fx-alignment: center-left;
+}
