@@ -289,6 +289,17 @@ public class ProfessorPublicationsApp extends Application {
         scene.getStylesheets().add(stylesheet.toExternalForm());
     }
 
+    private void applyDialogStylesheet(Dialog<?> dialog) {
+        URL stylesheet = getClass().getResource("/styles/app.css");
+
+        if (stylesheet == null) {
+            System.out.println("Stylesheet dialog non trovato: /styles/app.css");
+            return;
+        }
+
+        dialog.getDialogPane().getStylesheets().add(stylesheet.toExternalForm());
+    }
+
     private void applyApplicationIcon(Stage stage) {
         URL iconUrl = getClass().getResource("/icons/app-icon.png");
 
@@ -568,6 +579,7 @@ public class ProfessorPublicationsApp extends Application {
         dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
         dialog.setResizable(true);
         applyDialogIcon(dialog);
+        applyDialogStylesheet(dialog);
 
         Label infoLabel = new Label(
                 "Rubrica locale personale. I dati inseriti restano salvati solo su questo PC. "
@@ -619,7 +631,7 @@ public class ProfessorPublicationsApp extends Application {
         addButton.getStyleClass().add("success-button");
 
         Button helpButton = new Button("? Aiuto");
-        helpButton.getStyleClass().add("help-button");
+        helpButton.getStyleClass().add("cf-help-bib-style-button");
 
         HBox lookupToolbar = new HBox(10, filterField, useButton, addButton);
         lookupToolbar.setAlignment(Pos.CENTER_LEFT);
@@ -771,6 +783,7 @@ public class ProfessorPublicationsApp extends Application {
         dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
         dialog.setResizable(true);
         applyDialogIcon(dialog);
+        applyDialogStylesheet(dialog);
 
         TextArea helpArea = new TextArea();
         helpArea.setEditable(false);
@@ -835,6 +848,7 @@ public class ProfessorPublicationsApp extends Application {
         );
 
         applyDialogIcon(alert);
+        applyDialogStylesheet(alert);
 
         Optional<ButtonType> result = alert.showAndWait();
 
@@ -849,6 +863,7 @@ public class ProfessorPublicationsApp extends Application {
         dialog.setTitle(title);
         dialog.setResizable(true);
         applyDialogIcon(dialog);
+        applyDialogStylesheet(dialog);
 
         ButtonType saveButtonType = new ButtonType("Salva", ButtonBar.ButtonData.OK_DONE);
         dialog.getDialogPane().getButtonTypes().addAll(saveButtonType, ButtonType.CANCEL);
@@ -1149,6 +1164,7 @@ public class ProfessorPublicationsApp extends Application {
         alert.setHeaderText("Pubblicazioni IRIS aggiornate");
         alert.setContentText("Vuoi aggiornare ora gli indici citazionali da Scopus e Scholar?");
         applyDialogIcon(alert);
+        applyDialogStylesheet(alert);
 
         Optional<ButtonType> result = alert.showAndWait();
 
@@ -1180,6 +1196,7 @@ public class ProfessorPublicationsApp extends Application {
         dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
         dialog.setResizable(true);
         applyDialogIcon(dialog);
+        applyDialogStylesheet(dialog);
 
         TextArea bibtexArea = new TextArea(bibtexEntry.rawBibtex());
         bibtexArea.setEditable(false);
@@ -1250,6 +1267,7 @@ public class ProfessorPublicationsApp extends Application {
         alert.setHeaderText(null);
         alert.setContentText(message != null ? message : "Errore non specificato.");
         applyDialogIcon(alert);
+        applyDialogStylesheet(alert);
         alert.showAndWait();
     }
 
