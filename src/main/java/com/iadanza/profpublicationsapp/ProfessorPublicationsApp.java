@@ -21,6 +21,7 @@ import com.iadanza.profpublicationsapp.infrastructure.config.DotenvLoader;
 import com.iadanza.profpublicationsapp.infrastructure.config.IrisAccessMode;
 import com.iadanza.profpublicationsapp.infrastructure.config.IrisRestAuthSettings;
 import com.iadanza.profpublicationsapp.infrastructure.config.IrisRuntimeSettings;
+import com.iadanza.profpublicationsapp.infrastructure.config.ScopusApiSettings;
 import com.iadanza.profpublicationsapp.infrastructure.connector.HybridIrisConnector;
 import com.iadanza.profpublicationsapp.infrastructure.connector.IrisConnector;
 import com.iadanza.profpublicationsapp.infrastructure.connector.ScholarConnector;
@@ -29,6 +30,7 @@ import com.iadanza.profpublicationsapp.infrastructure.connector.fake.FakeIrisCon
 import com.iadanza.profpublicationsapp.infrastructure.connector.fake.FakeScholarConnector;
 import com.iadanza.profpublicationsapp.infrastructure.connector.fake.FakeScopusConnector;
 import com.iadanza.profpublicationsapp.infrastructure.connector.real.RealIrisConnector;
+import com.iadanza.profpublicationsapp.infrastructure.connector.real.RealScopusConnector;
 import com.iadanza.profpublicationsapp.infrastructure.connector.real.diagnostic.AuthenticatedRestCallResult;
 import com.iadanza.profpublicationsapp.infrastructure.connector.real.diagnostic.IrisRestAdvancedProbe;
 import com.iadanza.profpublicationsapp.infrastructure.connector.real.diagnostic.RestEndpointProbeResult;
@@ -94,6 +96,11 @@ import java.util.concurrent.atomic.AtomicReference;
  * - pulsante Aiuto spostato in basso a sinistra;
  * - stile dedicato per il pulsante Aiuto;
  * - testo guida aggiornato con nota "I DATI RESTANO LOCALI".
+ *
+ * E2:
+ * - collegamento RealScopusConnector se SCOPUS_API_KEY è configurata;
+ * - fallback automatico a FakeScopusConnector se Scopus non è configurato;
+ * - nessuna API key o token vengono stampati nei log.
  */
 public class ProfessorPublicationsApp extends Application {
 
@@ -232,7 +239,9 @@ public class ProfessorPublicationsApp extends Application {
         IrisConnector fakeIrisConnector = new FakeIrisConnector();
         IrisConnector irisConnector = new HybridIrisConnector(fakeIrisConnector, realIrisConnector);
 
-        ScopusConnector scopusConnector = new FakeScopusConnector();
+        ScopusApiSettings scopusApiSettings = ScopusApiSettings.fromEnvironment();
+        ScopusConnector scopusConnector = createScopusConnector(scopusApiSettings);
+
         ScholarConnector scholarConnector = new FakeScholarConnector();
 
         PublicationCacheRepository publicationCacheRepository =
@@ -276,6 +285,27 @@ public class ProfessorPublicationsApp extends Application {
         stage.setTitle("Professor Publications App");
         stage.setScene(scene);
         stage.show();
+    }
+
+    private ScopusConnector createScopusConnector(ScopusApiSettings scopusApiSettings) {
+        if (scopusApiSettings == null || !scopusApiSettings.isEnabled()) {
+            System.out.println("Scopus real connector disabled. SCOPUS_API_KEY not configured. Using FakeScopusConnector.");
+            return new FakeScopusConnector();
+        }
+
+        HttpClient scopusHttpClient = HttpClient.newBuilder()
+                .connectTimeout(java.time.Duration.ofSeconds(scopusApiSettings.timeoutSeconds()))
+                .build();
+
+        System.out.println("Scopus real connector enabled. "
+                + "baseUrl="
+                + scopusApiSettings.baseUrl()
+                + ", timeoutSeconds="
+                + scopusApiSettings.timeoutSeconds()
+                + ", instTokenConfigured="
+                + scopusApiSettings.hasInstToken());
+
+        return new RealScopusConnector(scopusHttpClient, scopusApiSettings);
     }
 
     private void applyStylesheet(Scene scene) {
