@@ -23,21 +23,21 @@ import java.util.Optional;
 /**
  * Connettore reale minimale per Scopus / Elsevier.
  *
- * Fase E2 — Scopus reale minima:
- * - recupera il numero di citazioni Scopus a partire dal DOI;
- * - usa le API ufficiali Elsevier;
- * - legge configurazione da ScopusApiSettings;
- * - degrada senza crash se API key, DOI o accesso Scopus non sono disponibili;
- * - non stampa mai API key o institutional token nei log.
+ * Fase E2:
+ * - recupera il numero di citazioni Scopus a partire dal DOI.
  *
- * Nota:
- * In questa fase NON implementiamo ancora:
- * - documenti citanti reali;
- * - BibTeX reale da Scopus.
+ * Fase #229-B:
+ * - conserva l'EID Scopus restituito dalla Search API;
+ * - aggiunge una nota PARTIAL_DATA quando il citation count è disponibile
+ *   ma l'elenco dei documenti citanti non è accessibile con le autorizzazioni API attuali.
  */
 public class RealScopusConnector implements ScopusConnector {
 
     private static final String SCOPUS_SEARCH_PATH = "/content/search/scopus";
+
+    private static final String CITING_DOCUMENTS_NOT_AUTHORIZED_NOTE =
+            "Documenti citanti Scopus non disponibili con le autorizzazioni API attuali. "
+                    + "Il numero totale di citazioni Scopus è disponibile.";
 
     private final HttpClient httpClient;
     private final ScopusApiSettings settings;
@@ -115,13 +115,13 @@ public class RealScopusConnector implements ScopusConnector {
 
     @Override
     public List<CitingDocument> findCitingDocuments(Publication publication) {
-        System.out.println("Scopus citing documents not implemented in E2. Returning empty list.");
+        System.out.println("Scopus citing documents unavailable with current API permissions. Returning empty list.");
         return List.of();
     }
 
     @Override
     public Optional<BibtexEntry> fetchBibtexEntry(Publication publication) {
-        System.out.println("Scopus BibTeX retrieval not implemented in E2. Returning empty result.");
+        System.out.println("Scopus BibTeX retrieval not implemented in v1. Returning empty result.");
         return Optional.empty();
     }
 
@@ -189,6 +189,8 @@ public class RealScopusConnector implements ScopusConnector {
             return Optional.empty();
         }
 
+        String note = buildCitingDocumentsNote(citedByCount, eid);
+
         System.out.println("Scopus citation summary fetched. requestedDoi="
                 + requestedDoi
                 + ", returnedDoi="
@@ -203,8 +205,27 @@ public class RealScopusConnector implements ScopusConnector {
         return Optional.of(new CitationSummary(
                 citedByCount,
                 null,
-                citedByCount
+                citedByCount,
+                normalizeBlankToNull(eid),
+                note
         ));
+    }
+
+    private String buildCitingDocumentsNote(Integer citedByCount, String eid) {
+        if (citedByCount == null) {
+            return null;
+        }
+
+        if (citedByCount <= 0) {
+            return null;
+        }
+
+        if (eid == null || eid.isBlank()) {
+            return "Scopus restituisce un numero di citazioni maggiore di zero, "
+                    + "ma l'EID del record non è disponibile.";
+        }
+
+        return CITING_DOCUMENTS_NOT_AUTHORIZED_NOTE;
     }
 
     private void handleNonSuccessStatus(int statusCode, String doi, String responseBody) {
@@ -291,6 +312,14 @@ public class RealScopusConnector implements ScopusConnector {
         }
 
         return abbreviate(publication.title(), 90);
+    }
+
+    private String normalizeBlankToNull(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+
+        return value.trim();
     }
 
     private String abbreviate(String value, int maxLength) {

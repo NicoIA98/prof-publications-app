@@ -105,6 +105,11 @@ import java.util.concurrent.atomic.AtomicReference;
  * - rimosso refresh citazionale massivo dalla top bar;
  * - spostato Refresh IRIS nel pannello Pubblicazioni IRIS;
  * - aggiunto Refresh Scopus/Scholar pubblicazione sul dettaglio della pubblicazione selezionata.
+ *
+ * #229-B:
+ * - mostra EID Scopus nella sezione "Citazioni e documenti citanti";
+ * - mostra PARTIAL_DATA quando Scopus restituisce il citation count ma non permette l'accesso
+ *   ai documenti citanti con l'API key attuale.
  */
 public class ProfessorPublicationsApp extends Application {
 
@@ -1200,12 +1205,23 @@ public class ProfessorPublicationsApp extends Application {
                 ? updatedSummary.scholarCitationCount().toString()
                 : "N/D";
 
+        String scopusEid = hasText(updatedSummary.scopusEid())
+                ? updatedSummary.scopusEid()
+                : "N/D";
+
+        String partialDataMessage = hasText(updatedSummary.scopusCitingDocumentsNote())
+                ? " Stato documenti citanti Scopus: PARTIAL_DATA."
+                : "";
+
         updateStatus("Citazioni aggiornate per la pubblicazione selezionata. "
                 + "Scopus: "
                 + scopusCount
                 + ", Scholar: "
                 + scholarCount
-                + ".");
+                + ", EID Scopus: "
+                + scopusEid
+                + "."
+                + partialDataMessage);
     }
 
     private void showBibtexForPublication(Publication publication) {
@@ -1353,18 +1369,37 @@ public class ProfessorPublicationsApp extends Application {
         builder.append("Citazioni Scopus: ")
                 .append(summary.scopusCitationCount() != null ? summary.scopusCitationCount() : "N/D")
                 .append("\n");
+
+        builder.append("EID Scopus: ")
+                .append(hasText(summary.scopusEid()) ? summary.scopusEid() : "N/D")
+                .append("\n");
+
         builder.append("Citazioni Scholar: ")
                 .append(summary.scholarCitationCount() != null ? summary.scholarCitationCount() : "N/D")
                 .append("\n");
+
         builder.append("Totale aggregato: ")
                 .append(summary.totalCitationCount() != null ? summary.totalCitationCount() : "N/D")
-                .append("\n\n");
+                .append("\n");
 
+        if (hasText(summary.scopusCitingDocumentsNote())) {
+            builder.append("Stato documenti citanti Scopus: PARTIAL_DATA\n");
+            builder.append("Nota Scopus: ")
+                    .append(summary.scopusCitingDocumentsNote())
+                    .append("\n");
+        }
+
+        builder.append("\n");
         builder.append("Documenti citanti trovati: ").append(citingDocuments.size()).append("\n\n");
 
         if (citingDocuments.isEmpty()) {
-            builder.append("Nessun documento citante in cache.\n");
-            builder.append("Premi \"Refresh Scopus/Scholar pubblicazione\" per aggiornare le citazioni della pubblicazione selezionata.");
+            if (hasText(summary.scopusCitingDocumentsNote())) {
+                builder.append("Nessun documento citante Scopus salvato in cache.\n");
+                builder.append("Il conteggio citazionale Scopus è disponibile, ma l'elenco dei documenti citanti richiede permessi API aggiuntivi.\n");
+            } else {
+                builder.append("Nessun documento citante in cache.\n");
+                builder.append("Premi \"Refresh Scopus/Scholar pubblicazione\" per aggiornare le citazioni della pubblicazione selezionata.");
+            }
         } else {
             for (CitingDocument document : citingDocuments) {
                 builder.append("• ").append(document.title()).append("\n");
@@ -1396,6 +1431,10 @@ public class ProfessorPublicationsApp extends Application {
 
     private void resetCitationDetails() {
         citationDetailsArea.setText("Seleziona una pubblicazione e premi \"Refresh Scopus/Scholar pubblicazione\" per vedere i dettagli citazionali.");
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.trim().isBlank();
     }
 
     private void updateStatus(String statusText) {

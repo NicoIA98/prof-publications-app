@@ -17,6 +17,11 @@ import java.util.Map;
 /**
  * Implementazione base del servizio citazionale.
  * In questa fase usa una cache persistente su SQLite.
+ *
+ * #229-B:
+ * - conserva l'EID Scopus restituito dal RealScopusConnector;
+ * - conserva la nota PARTIAL_DATA sui documenti citanti Scopus non disponibili;
+ * - mantiene compatibile il merge Scopus + Scholar.
  */
 public class DefaultCitationService implements CitationService {
 
@@ -47,14 +52,37 @@ public class DefaultCitationService implements CitationService {
 
     @Override
     public CitationSummary refreshCitationSummary(Publication publication) {
+        CitationSummary existing = getCachedCitationSummary(publication);
+
         CitationSummary scopusSummary = scopusConnector.fetchCitationSummary(publication).orElse(null);
         CitationSummary scholarSummary = scholarConnector.fetchCitationSummary(publication).orElse(null);
 
-        Integer scopusCount = scopusSummary != null ? scopusSummary.scopusCitationCount() : null;
-        Integer scholarCount = scholarSummary != null ? scholarSummary.scholarCitationCount() : null;
+        Integer scopusCount = scopusSummary != null
+                ? scopusSummary.scopusCitationCount()
+                : existing.scopusCitationCount();
+
+        Integer scholarCount = scholarSummary != null
+                ? scholarSummary.scholarCitationCount()
+                : existing.scholarCitationCount();
+
         Integer total = computeTotal(scopusCount, scholarCount);
 
-        CitationSummary merged = new CitationSummary(scopusCount, scholarCount, total);
+        String scopusEid = scopusSummary != null
+                ? scopusSummary.scopusEid()
+                : existing.scopusEid();
+
+        String scopusCitingDocumentsNote = scopusSummary != null
+                ? scopusSummary.scopusCitingDocumentsNote()
+                : existing.scopusCitingDocumentsNote();
+
+        CitationSummary merged = new CitationSummary(
+                scopusCount,
+                scholarCount,
+                total,
+                scopusEid,
+                scopusCitingDocumentsNote
+        );
+
         List<CitingDocument> existingDocuments = getCachedCitingDocuments(publication);
 
         citationCacheRepository.saveCitationData(publication, merged, existingDocuments);
@@ -77,11 +105,29 @@ public class DefaultCitationService implements CitationService {
         CitationSummary existing = getCachedCitationSummary(publication);
         CitationSummary scopusSummary = scopusConnector.fetchCitationSummary(publication).orElse(null);
 
-        Integer scopusCount = scopusSummary != null ? scopusSummary.scopusCitationCount() : existing.scopusCitationCount();
+        Integer scopusCount = scopusSummary != null
+                ? scopusSummary.scopusCitationCount()
+                : existing.scopusCitationCount();
+
         Integer scholarCount = existing.scholarCitationCount();
         Integer total = computeTotal(scopusCount, scholarCount);
 
-        CitationSummary updated = new CitationSummary(scopusCount, scholarCount, total);
+        String scopusEid = scopusSummary != null
+                ? scopusSummary.scopusEid()
+                : existing.scopusEid();
+
+        String scopusCitingDocumentsNote = scopusSummary != null
+                ? scopusSummary.scopusCitingDocumentsNote()
+                : existing.scopusCitingDocumentsNote();
+
+        CitationSummary updated = new CitationSummary(
+                scopusCount,
+                scholarCount,
+                total,
+                scopusEid,
+                scopusCitingDocumentsNote
+        );
+
         citationCacheRepository.saveCitationData(publication, updated, getCachedCitingDocuments(publication));
         return updated;
     }
@@ -91,10 +137,21 @@ public class DefaultCitationService implements CitationService {
         CitationSummary scholarSummary = scholarConnector.fetchCitationSummary(publication).orElse(null);
 
         Integer scopusCount = existing.scopusCitationCount();
-        Integer scholarCount = scholarSummary != null ? scholarSummary.scholarCitationCount() : existing.scholarCitationCount();
+
+        Integer scholarCount = scholarSummary != null
+                ? scholarSummary.scholarCitationCount()
+                : existing.scholarCitationCount();
+
         Integer total = computeTotal(scopusCount, scholarCount);
 
-        CitationSummary updated = new CitationSummary(scopusCount, scholarCount, total);
+        CitationSummary updated = new CitationSummary(
+                scopusCount,
+                scholarCount,
+                total,
+                existing.scopusEid(),
+                existing.scopusCitingDocumentsNote()
+        );
+
         citationCacheRepository.saveCitationData(publication, updated, getCachedCitingDocuments(publication));
         return updated;
     }
