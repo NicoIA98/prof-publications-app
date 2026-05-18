@@ -1,12 +1,10 @@
 package com.iadanza.profpublicationsapp;
 
 import com.iadanza.profpublicationsapp.application.service.BibtexService;
-import com.iadanza.profpublicationsapp.application.service.CitationRefreshService;
 import com.iadanza.profpublicationsapp.application.service.CitationService;
 import com.iadanza.profpublicationsapp.application.service.ProfessorSearchService;
 import com.iadanza.profpublicationsapp.application.service.PublicationCatalogService;
 import com.iadanza.profpublicationsapp.application.service.impl.DefaultBibtexService;
-import com.iadanza.profpublicationsapp.application.service.impl.DefaultCitationRefreshService;
 import com.iadanza.profpublicationsapp.application.service.impl.DefaultCitationService;
 import com.iadanza.profpublicationsapp.application.service.impl.DefaultProfessorSearchService;
 import com.iadanza.profpublicationsapp.application.service.impl.DefaultPublicationCatalogService;
@@ -73,6 +71,7 @@ import javafx.scene.input.ClipboardContent;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
@@ -101,13 +100,17 @@ import java.util.concurrent.atomic.AtomicReference;
  * - collegamento RealScopusConnector se SCOPUS_API_KEY è configurata;
  * - fallback automatico a FakeScopusConnector se Scopus non è configurato;
  * - nessuna API key o token vengono stampati nei log.
+ *
+ * E3.4:
+ * - rimosso refresh citazionale massivo dalla top bar;
+ * - spostato Refresh IRIS nel pannello Pubblicazioni IRIS;
+ * - aggiunto Refresh Scopus/Scholar pubblicazione sul dettaglio della pubblicazione selezionata.
  */
 public class ProfessorPublicationsApp extends Application {
 
     private ProfessorSearchService professorSearchService;
     private PublicationCatalogService publicationCatalogService;
     private CitationService citationService;
-    private CitationRefreshService citationRefreshService;
     private BibtexService bibtexService;
     private ProfessorLookupRepository professorLookupRepository;
 
@@ -258,8 +261,6 @@ public class ProfessorPublicationsApp extends Application {
                 new DefaultCitationService(scopusConnector, scholarConnector, citationCacheRepository);
 
         this.citationService = defaultCitationService;
-        this.citationRefreshService =
-                new DefaultCitationRefreshService(publicationCatalogService, defaultCitationService);
 
         this.bibtexService = new DefaultBibtexService(irisConnector, scopusConnector, scholarConnector);
 
@@ -386,18 +387,10 @@ public class ProfessorPublicationsApp extends Application {
         Button searchProfessorButton = new Button("Cerca professore");
         searchProfessorButton.getStyleClass().add("primary-button");
 
-        Button refreshPublicationsButton = new Button("Refresh pubblicazioni da IRIS");
-        refreshPublicationsButton.getStyleClass().add("secondary-button");
-
-        Button refreshCitationsButton = new Button("Refresh indici Scopus e Scholar");
-        refreshCitationsButton.getStyleClass().add("secondary-button");
-
         Button professorLookupButton = new Button("Rubrica CF");
         professorLookupButton.getStyleClass().add("success-button");
 
         searchProfessorButton.setOnAction(event -> searchProfessor());
-        refreshPublicationsButton.setOnAction(event -> refreshProfessorPublications());
-        refreshCitationsButton.setOnAction(event -> refreshCitationData());
         professorLookupButton.setOnAction(event -> showProfessorLookupDialog());
 
         HBox controlsBar = new HBox(
@@ -406,8 +399,6 @@ public class ProfessorPublicationsApp extends Application {
                 searchModeCombo,
                 searchInputField,
                 searchProfessorButton,
-                refreshPublicationsButton,
-                refreshCitationsButton,
                 professorLookupButton
         );
         controlsBar.getStyleClass().add("search-bar");
@@ -471,6 +462,14 @@ public class ProfessorPublicationsApp extends Application {
         publicationFilterField.setPromptText("Filtra pubblicazioni per titolo, anno, autore, venue o DOI");
         publicationFilterField.getStyleClass().add("publication-filter");
         publicationFilterField.textProperty().addListener((obs, oldValue, newValue) -> applyPublicationFilter());
+        HBox.setHgrow(publicationFilterField, Priority.ALWAYS);
+
+        Button refreshIrisButton = new Button("Refresh IRIS");
+        refreshIrisButton.getStyleClass().add("secondary-button");
+        refreshIrisButton.setOnAction(event -> refreshProfessorPublications());
+
+        HBox publicationSearchBar = new HBox(10, publicationFilterField, refreshIrisButton);
+        publicationSearchBar.setAlignment(Pos.CENTER_LEFT);
 
         publicationsTable = new TableView<>();
         publicationsTable.getStyleClass().add("publications-table");
@@ -560,7 +559,7 @@ public class ProfessorPublicationsApp extends Application {
             publicationsTable.refresh();
         });
 
-        VBox publicationsPane = new VBox(8, sectionTitle, publicationFilterField, publicationsTable);
+        VBox publicationsPane = new VBox(8, sectionTitle, publicationSearchBar, publicationsTable);
         publicationsPane.getStyleClass().add("panel");
         publicationsPane.setPadding(new Insets(10));
         VBox.setVgrow(publicationsTable, Priority.ALWAYS);
@@ -570,6 +569,21 @@ public class ProfessorPublicationsApp extends Application {
     private VBox buildDetailsPane() {
         Label publicationTitle = new Label("Dettaglio pubblicazione");
         publicationTitle.getStyleClass().add("section-title");
+
+        Button refreshSelectedCitationButton = new Button("Refresh Scopus/Scholar pubblicazione");
+        refreshSelectedCitationButton.getStyleClass().add("secondary-button");
+        refreshSelectedCitationButton.setOnAction(event -> refreshSelectedPublicationCitationData());
+
+        Region publicationHeaderSpacer = new Region();
+        HBox.setHgrow(publicationHeaderSpacer, Priority.ALWAYS);
+
+        HBox publicationHeader = new HBox(
+                10,
+                publicationTitle,
+                publicationHeaderSpacer,
+                refreshSelectedCitationButton
+        );
+        publicationHeader.setAlignment(Pos.CENTER_LEFT);
 
         publicationDetailsArea = new TextArea();
         publicationDetailsArea.setEditable(false);
@@ -586,7 +600,7 @@ public class ProfessorPublicationsApp extends Application {
 
         VBox detailsPane = new VBox(
                 8,
-                publicationTitle,
+                publicationHeader,
                 publicationDetailsArea,
                 citationTitle,
                 citationDetailsArea
@@ -1147,7 +1161,6 @@ public class ProfessorPublicationsApp extends Application {
 
         if (!publicationItems.isEmpty()) {
             updateStatus("Pubblicazioni IRIS aggiornate: " + publications.size() + ".");
-            askForCitationRefresh();
         } else {
             updateStatus("Nessuna pubblicazione trovata su IRIS.");
         }
@@ -1167,42 +1180,32 @@ public class ProfessorPublicationsApp extends Application {
                 .toList();
     }
 
-    private void refreshCitationData() {
-        if (selectedProfessor == null) {
-            updateStatus("Prima devi cercare un professore.");
-            return;
-        }
-
-        if (publicationItems.isEmpty()) {
-            updateStatus("Prima devi aggiornare le pubblicazioni da IRIS.");
-            return;
-        }
-
-        citationRefreshService.refreshAllCitationData(selectedProfessor);
-
+    private void refreshSelectedPublicationCitationData() {
         Publication selectedPublication = publicationsTable.getSelectionModel().getSelectedItem();
-        if (selectedPublication != null) {
-            showCitationDetails(selectedPublication);
+
+        if (selectedPublication == null) {
+            updateStatus("Seleziona una pubblicazione prima di aggiornare Scopus/Scholar.");
+            return;
         }
 
-        updateStatus("Indici citazionali Scopus e Scholar aggiornati.");
-    }
+        CitationSummary updatedSummary = citationService.refreshCitationSummary(selectedPublication);
 
-    private void askForCitationRefresh() {
-        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
-        alert.setTitle("Aggiornamento indici citazionali");
-        alert.setHeaderText("Pubblicazioni IRIS aggiornate");
-        alert.setContentText("Vuoi aggiornare ora gli indici citazionali da Scopus e Scholar?");
-        applyDialogIcon(alert);
-        applyDialogStylesheet(alert);
+        showCitationDetails(selectedPublication);
 
-        Optional<ButtonType> result = alert.showAndWait();
+        String scopusCount = updatedSummary.scopusCitationCount() != null
+                ? updatedSummary.scopusCitationCount().toString()
+                : "N/D";
 
-        if (result.isPresent() && result.get() == ButtonType.OK) {
-            refreshCitationData();
-        } else {
-            updateStatus("Pubblicazioni IRIS aggiornate. Refresh citazionale rimandato.");
-        }
+        String scholarCount = updatedSummary.scholarCitationCount() != null
+                ? updatedSummary.scholarCitationCount().toString()
+                : "N/D";
+
+        updateStatus("Citazioni aggiornate per la pubblicazione selezionata. "
+                + "Scopus: "
+                + scopusCount
+                + ", Scholar: "
+                + scholarCount
+                + ".");
     }
 
     private void showBibtexForPublication(Publication publication) {
@@ -1360,8 +1363,8 @@ public class ProfessorPublicationsApp extends Application {
         builder.append("Documenti citanti trovati: ").append(citingDocuments.size()).append("\n\n");
 
         if (citingDocuments.isEmpty()) {
-            builder.append("Nessun dato citazionale in cache.\n");
-            builder.append("Premi \"Refresh indici Scopus e Scholar\" per aggiornarli.");
+            builder.append("Nessun documento citante in cache.\n");
+            builder.append("Premi \"Refresh Scopus/Scholar pubblicazione\" per aggiornare le citazioni della pubblicazione selezionata.");
         } else {
             for (CitingDocument document : citingDocuments) {
                 builder.append("• ").append(document.title()).append("\n");
@@ -1392,7 +1395,7 @@ public class ProfessorPublicationsApp extends Application {
     }
 
     private void resetCitationDetails() {
-        citationDetailsArea.setText("Seleziona una pubblicazione e aggiorna gli indici citazionali per vedere i dettagli.");
+        citationDetailsArea.setText("Seleziona una pubblicazione e premi \"Refresh Scopus/Scholar pubblicazione\" per vedere i dettagli citazionali.");
     }
 
     private void updateStatus(String statusText) {
