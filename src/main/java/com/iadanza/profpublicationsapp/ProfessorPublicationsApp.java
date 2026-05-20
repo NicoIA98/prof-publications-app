@@ -78,12 +78,15 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
+import javafx.scene.control.Hyperlink;
 
 import java.io.File;
 import java.io.IOException;
 import java.net.URL;
 import java.net.http.HttpClient;
 import java.nio.file.Files;
+import java.text.Normalizer;
+import java.util.Locale;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -1507,7 +1510,7 @@ public class ProfessorPublicationsApp extends Application {
 
         TableView<CitingDocument> table = new TableView<>();
         table.setItems(filteredDocuments);
-        table.setPrefSize(1080, 500);
+        table.setPrefSize(1180, 520);
 
         TableColumn<CitingDocument, String> titleColumn = new TableColumn<>("Titolo");
         titleColumn.setCellValueFactory(cellData ->
@@ -1515,19 +1518,87 @@ public class ProfessorPublicationsApp extends Application {
                         cellData.getValue().title() != null ? cellData.getValue().title() : "N/D"
                 )
         );
-        titleColumn.setPrefWidth(340);
+        titleColumn.setPrefWidth(330);
 
         TableColumn<CitingDocument, String> authorsColumn = new TableColumn<>("Autori");
         authorsColumn.setCellValueFactory(cellData ->
                 new ReadOnlyStringWrapper(formatAuthors(cellData.getValue().authors()))
         );
-        authorsColumn.setPrefWidth(240);
+        authorsColumn.setPrefWidth(230);
 
         TableColumn<CitingDocument, Integer> yearColumn = new TableColumn<>("Anno");
         yearColumn.setCellValueFactory(cellData ->
                 new ReadOnlyObjectWrapper<>(cellData.getValue().year())
         );
         yearColumn.setPrefWidth(70);
+
+        TableColumn<CitingDocument, Void> bibtexColumn = new TableColumn<>("BibTeX");
+        bibtexColumn.setPrefWidth(85);
+        bibtexColumn.setCellFactory(param -> new TableCell<>() {
+            private final Button bibtexButton = new Button(".bib");
+
+            {
+                bibtexButton.getStyleClass().add("success-button");
+                bibtexButton.setOnAction(event -> {
+                    if (getIndex() < 0 || getIndex() >= getTableView().getItems().size()) {
+                        return;
+                    }
+
+                    CitingDocument document = getTableView().getItems().get(getIndex());
+                    showBibtexForCitingDocument(document);
+                });
+            }
+
+            @Override
+            protected void updateItem(Void item, boolean empty) {
+                super.updateItem(item, empty);
+
+                if (empty || getIndex() < 0 || getIndex() >= getTableView().getItems().size()) {
+                    setGraphic(null);
+                    return;
+                }
+
+                setGraphic(bibtexButton);
+            }
+        });
+
+        TableColumn<CitingDocument, Void> urlColumn = new TableColumn<>("URL");
+        urlColumn.setPrefWidth(260);
+        urlColumn.setCellFactory(param -> new TableCell<>() {
+            private final Hyperlink hyperlink = new Hyperlink();
+
+            {
+                hyperlink.setOnAction(event -> {
+                    if (getIndex() < 0 || getIndex() >= getTableView().getItems().size()) {
+                        return;
+                    }
+
+                    CitingDocument document = getTableView().getItems().get(getIndex());
+                    openExternalUrl(document.sourceUrl());
+                });
+            }
+
+            @Override
+            protected void updateItem(Void item, boolean empty) {
+                super.updateItem(item, empty);
+
+                if (empty || getIndex() < 0 || getIndex() >= getTableView().getItems().size()) {
+                    setGraphic(null);
+                    return;
+                }
+
+                CitingDocument document = getTableView().getItems().get(getIndex());
+                String url = document.sourceUrl();
+
+                if (!hasText(url)) {
+                    setGraphic(new Label("N/D"));
+                    return;
+                }
+
+                hyperlink.setText(abbreviateForTable(url, 42));
+                setGraphic(hyperlink);
+            }
+        });
 
         TableColumn<CitingDocument, String> doiColumn = new TableColumn<>("DOI");
         doiColumn.setCellValueFactory(cellData ->
@@ -1549,21 +1620,14 @@ public class ProfessorPublicationsApp extends Application {
         );
         statusColumn.setPrefWidth(110);
 
-        TableColumn<CitingDocument, String> urlColumn = new TableColumn<>("URL");
-        urlColumn.setCellValueFactory(cellData ->
-                new ReadOnlyStringWrapper(
-                        cellData.getValue().sourceUrl() != null ? cellData.getValue().sourceUrl() : "N/D"
-                )
-        );
-        urlColumn.setPrefWidth(360);
-
         table.getColumns().add(titleColumn);
         table.getColumns().add(authorsColumn);
         table.getColumns().add(yearColumn);
+        table.getColumns().add(bibtexColumn);
+        table.getColumns().add(urlColumn);
         table.getColumns().add(doiColumn);
         table.getColumns().add(sourceColumn);
         table.getColumns().add(statusColumn);
-        table.getColumns().add(urlColumn);
 
         filterField.textProperty().addListener((obs, oldValue, newValue) ->
                 refreshCitingDocumentsTable(filteredDocuments, sourceDocuments, newValue)
@@ -1679,6 +1743,223 @@ public class ProfessorPublicationsApp extends Application {
         }
 
         return "Nessun documento citante disponibile in cache.";
+    }
+
+    private void showBibtexForCitingDocument(CitingDocument document) {
+        if (document == null) {
+            updateStatus("Seleziona prima un documento citante.");
+            return;
+        }
+
+        Optional<BibtexEntry> result = generateBibtexForCitingDocument(document);
+
+        if (result.isEmpty()) {
+            updateStatus("Impossibile generare il BibTeX per il documento citante.");
+            return;
+        }
+
+        BibtexEntry bibtexEntry = result.get();
+        updateStatus("BibTeX generato per documento citante da sorgente: "
+                + bibtexEntry.sourceType()
+                + ".");
+
+        Dialog<Void> dialog = new Dialog<>();
+        dialog.setTitle("BibTeX documento citante - " + safeDisplayText(document.title()));
+        dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
+        dialog.setResizable(true);
+        applyDialogIcon(dialog);
+        applyDialogStylesheet(dialog);
+
+        TextArea bibtexArea = new TextArea(bibtexEntry.rawBibtex());
+        bibtexArea.setEditable(false);
+        bibtexArea.setWrapText(true);
+        bibtexArea.setPrefSize(700, 350);
+
+        Button copyButton = new Button("Copia BibTeX");
+        copyButton.getStyleClass().add("primary-button");
+        copyButton.setOnAction(event -> copyBibtexToClipboard(bibtexEntry.rawBibtex()));
+
+        Button saveButton = new Button("Salva .bib");
+        saveButton.getStyleClass().add("success-button");
+        saveButton.setOnAction(event -> saveBibtexToFile(bibtexEntry));
+
+        HBox actionBar = new HBox(10, copyButton, saveButton);
+        actionBar.getStyleClass().add("dialog-actions");
+        actionBar.setAlignment(Pos.CENTER_LEFT);
+
+        VBox dialogContent = new VBox(10, bibtexArea, actionBar);
+        dialogContent.getStyleClass().add("dialog-content");
+        dialogContent.setPadding(new Insets(10));
+        VBox.setVgrow(bibtexArea, Priority.ALWAYS);
+
+        dialog.getDialogPane().setContent(dialogContent);
+        dialog.showAndWait();
+    }
+
+    private Optional<BibtexEntry> generateBibtexForCitingDocument(CitingDocument document) {
+        if (document == null || !hasText(document.title())) {
+            return Optional.empty();
+        }
+
+        String citationKey = buildCitingDocumentCitationKey(document);
+        String entryType = hasText(document.doi()) ? "article" : "misc";
+
+        StringBuilder builder = new StringBuilder();
+
+        builder.append("@")
+                .append(entryType)
+                .append("{")
+                .append(citationKey)
+                .append(",\n");
+
+        builder.append("  title = {")
+                .append(escapeBibtexValue(document.title()))
+                .append("}");
+
+        if (document.authors() != null && !document.authors().isEmpty()) {
+            builder.append(",\n");
+            builder.append("  author = {")
+                    .append(escapeBibtexValue(String.join(" and ", document.authors())))
+                    .append("}");
+        }
+
+        if (document.year() != null) {
+            builder.append(",\n");
+            builder.append("  year = {")
+                    .append(document.year())
+                    .append("}");
+        }
+
+        if (hasText(document.doi())) {
+            builder.append(",\n");
+            builder.append("  doi = {")
+                    .append(escapeBibtexValue(document.doi()))
+                    .append("}");
+        }
+
+        if (hasText(document.sourceUrl())) {
+            builder.append(",\n");
+            builder.append("  url = {")
+                    .append(escapeBibtexValue(document.sourceUrl()))
+                    .append("}");
+        }
+
+        builder.append(",\n");
+        builder.append("  note = {Citing document retrieved from ")
+                .append(document.sourceType())
+                .append("}");
+
+        builder.append("\n}");
+
+        return Optional.of(new BibtexEntry(
+                citationKey,
+                entryType,
+                builder.toString(),
+                document.sourceType(),
+                document.recordStatus()
+        ));
+    }
+
+    private String buildCitingDocumentCitationKey(CitingDocument document) {
+        String firstAuthor = "citing";
+
+        if (document.authors() != null && !document.authors().isEmpty()) {
+            firstAuthor = document.authors().get(0);
+        }
+
+        String year = document.year() != null ? document.year().toString() : "nd";
+        String titlePart = document.title() != null ? document.title() : "document";
+
+        String normalizedAuthor = normalizeCitationKeyPart(firstAuthor);
+        String normalizedTitle = normalizeCitationKeyPart(firstWords(titlePart, 4));
+
+        String citationKey = normalizedAuthor + year + normalizedTitle;
+
+        if (citationKey.isBlank()) {
+            return "citingDocument";
+        }
+
+        return citationKey;
+    }
+
+    private String firstWords(String value, int maxWords) {
+        if (value == null || value.isBlank()) {
+            return "";
+        }
+
+        String[] words = value.trim().split("\\s+");
+        StringBuilder builder = new StringBuilder();
+
+        for (int i = 0; i < words.length && i < maxWords; i++) {
+            builder.append(words[i]);
+        }
+
+        return builder.toString();
+    }
+
+    private String normalizeCitationKeyPart(String value) {
+        if (value == null || value.isBlank()) {
+            return "";
+        }
+
+        String normalized = Normalizer.normalize(value, Normalizer.Form.NFD)
+                .replaceAll("\\p{M}", "");
+
+        return normalized
+                .toLowerCase(Locale.ROOT)
+                .replaceAll("[^a-z0-9]+", "")
+                .trim();
+    }
+
+    private String escapeBibtexValue(String value) {
+        if (value == null) {
+            return "";
+        }
+
+        return value
+                .replace("\\", "\\\\")
+                .replace("{", "\\{")
+                .replace("}", "\\}");
+    }
+
+    private void openExternalUrl(String url) {
+        if (!hasText(url)) {
+            updateStatus("URL non disponibile per il documento citante selezionato.");
+            return;
+        }
+
+        try {
+            getHostServices().showDocument(url);
+            updateStatus("URL documento citante aperto nel browser.");
+        } catch (Exception e) {
+            updateStatus("Impossibile aprire l'URL del documento citante.");
+            showErrorAlert(
+                    "Errore apertura URL",
+                    "Non è stato possibile aprire il link:\n" + url
+            );
+        }
+    }
+
+    private String abbreviateForTable(String value, int maxLength) {
+        if (value == null) {
+            return "";
+        }
+
+        String normalized = value.trim();
+
+        if (normalized.length() <= maxLength) {
+            return normalized;
+        }
+
+        return normalized.substring(0, Math.max(0, maxLength - 3)) + "...";
+    }
+
+    private String safeDisplayText(String value) {
+        if (!hasText(value)) {
+            return "N/D";
+        }
+
+        return abbreviateForTable(value, 80);
     }
 
     private void resetProfessorSection() {
