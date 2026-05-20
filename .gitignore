@@ -3,7 +3,7 @@
 # per mantenere la repository pulita e portabile
 # =========================
 
-# Output generato da Maven, ignora la cartella target
+# Output generato da Maven
 target/
 
 # File e cartelle locali di IntelliJ IDEA
@@ -14,17 +14,30 @@ target/
 .DS_Store
 Thumbs.db
 
+# =========================
+# Configurazione locale e credenziali
+# =========================
+
+# File .env locale con credenziali reali
 .env
 *.env
 !.env.example
 
+# Settings locali salvati dall'app nella home utente
+# Esempio reale:
+# C:\Users\<utente>\.prof-publications-app\settings.properties
+settings.properties
+
+# Eventuale cartella locale dell'app se venisse creata per errore dentro il progetto
+.prof-publications-app/
+
+# =========================
 # Database SQLite locale generato dall'app
+# =========================
+
 prof-publications.db
 *.db
 *.db-journal
 *.sqlite
 *.sqlite3
 *.sqlite-journal
-
-# Eventuale cartella locale dell'app se venisse creata per errore dentro il progetto
-.prof-publications-app/
