@@ -4,43 +4,12 @@ import com.iadanza.profpublicationsapp.application.service.BibtexService;
 import com.iadanza.profpublicationsapp.application.service.CitationService;
 import com.iadanza.profpublicationsapp.application.service.ProfessorSearchService;
 import com.iadanza.profpublicationsapp.application.service.PublicationCatalogService;
-import com.iadanza.profpublicationsapp.application.service.impl.DefaultBibtexService;
-import com.iadanza.profpublicationsapp.application.service.impl.DefaultCitationService;
-import com.iadanza.profpublicationsapp.application.service.impl.DefaultProfessorSearchService;
-import com.iadanza.profpublicationsapp.application.service.impl.DefaultPublicationCatalogService;
+import com.iadanza.profpublicationsapp.bootstrap.AppBootstrap;
+import com.iadanza.profpublicationsapp.bootstrap.AppServices;
 import com.iadanza.profpublicationsapp.domain.enums.IdentifierType;
 import com.iadanza.profpublicationsapp.domain.enums.SourceType;
-import com.iadanza.profpublicationsapp.domain.model.BibtexEntry;
-import com.iadanza.profpublicationsapp.domain.model.CitationSummary;
-import com.iadanza.profpublicationsapp.domain.model.CitingDocument;
-import com.iadanza.profpublicationsapp.domain.model.Professor;
-import com.iadanza.profpublicationsapp.domain.model.ProfessorLookupEntry;
-import com.iadanza.profpublicationsapp.domain.model.Publication;
-import com.iadanza.profpublicationsapp.infrastructure.config.DotenvLoader;
-import com.iadanza.profpublicationsapp.infrastructure.config.IrisAccessMode;
-import com.iadanza.profpublicationsapp.infrastructure.config.IrisRestAuthSettings;
-import com.iadanza.profpublicationsapp.infrastructure.config.IrisRuntimeSettings;
-import com.iadanza.profpublicationsapp.infrastructure.config.ScopusApiSettings;
-import com.iadanza.profpublicationsapp.infrastructure.config.SerpApiScholarSettings;
-import com.iadanza.profpublicationsapp.infrastructure.connector.HybridIrisConnector;
-import com.iadanza.profpublicationsapp.infrastructure.connector.IrisConnector;
-import com.iadanza.profpublicationsapp.infrastructure.connector.ScholarConnector;
-import com.iadanza.profpublicationsapp.infrastructure.connector.ScopusConnector;
-import com.iadanza.profpublicationsapp.infrastructure.connector.fake.FakeIrisConnector;
-import com.iadanza.profpublicationsapp.infrastructure.connector.fake.FakeScholarConnector;
-import com.iadanza.profpublicationsapp.infrastructure.connector.fake.FakeScopusConnector;
-import com.iadanza.profpublicationsapp.infrastructure.connector.real.RealIrisConnector;
-import com.iadanza.profpublicationsapp.infrastructure.connector.real.RealScopusConnector;
-import com.iadanza.profpublicationsapp.infrastructure.connector.real.SerpApiScholarConnector;
-import com.iadanza.profpublicationsapp.infrastructure.connector.real.diagnostic.AuthenticatedRestCallResult;
-import com.iadanza.profpublicationsapp.infrastructure.connector.real.diagnostic.IrisRestAdvancedProbe;
-import com.iadanza.profpublicationsapp.infrastructure.connector.real.diagnostic.RestEndpointProbeResult;
-import com.iadanza.profpublicationsapp.infrastructure.lookup.CsvProfessorLookupRepository;
+import com.iadanza.profpublicationsapp.domain.model.*;
 import com.iadanza.profpublicationsapp.infrastructure.lookup.ProfessorLookupRepository;
-import com.iadanza.profpublicationsapp.infrastructure.persistence.CitationCacheRepository;
-import com.iadanza.profpublicationsapp.infrastructure.persistence.PublicationCacheRepository;
-import com.iadanza.profpublicationsapp.infrastructure.persistence.SqliteCitationCacheRepository;
-import com.iadanza.profpublicationsapp.infrastructure.persistence.SqlitePublicationCacheRepository;
 import javafx.application.Application;
 import javafx.beans.property.ReadOnlyObjectWrapper;
 import javafx.beans.property.ReadOnlyStringWrapper;
@@ -50,84 +19,30 @@ import javafx.event.ActionEvent;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
-import javafx.scene.control.Alert;
-import javafx.scene.control.Button;
-import javafx.scene.control.ButtonBar;
-import javafx.scene.control.ButtonType;
-import javafx.scene.control.ComboBox;
-import javafx.scene.control.ContextMenu;
-import javafx.scene.control.Dialog;
-import javafx.scene.control.Label;
-import javafx.scene.control.MenuItem;
-import javafx.scene.control.SelectionMode;
-import javafx.scene.control.SeparatorMenuItem;
-import javafx.scene.control.SplitPane;
-import javafx.scene.control.TableCell;
-import javafx.scene.control.TableColumn;
-import javafx.scene.control.TableRow;
-import javafx.scene.control.TableView;
-import javafx.scene.control.TextArea;
-import javafx.scene.control.TextField;
+import javafx.scene.control.*;
 import javafx.scene.image.Image;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
-import javafx.scene.layout.BorderPane;
-import javafx.scene.layout.HBox;
-import javafx.scene.layout.Priority;
-import javafx.scene.layout.Region;
-import javafx.scene.layout.VBox;
+import javafx.scene.layout.*;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
-import javafx.scene.control.Hyperlink;
 
 import java.io.File;
 import java.io.IOException;
 import java.net.URL;
-import java.net.http.HttpClient;
 import java.nio.file.Files;
 import java.text.Normalizer;
-import java.util.Locale;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Classe principale dell'applicazione JavaFX.
  *
- * D6:
- * - Rubrica CF privacy-friendly;
- * - pulsante Aiuto spostato in basso a sinistra;
- * - stile dedicato per il pulsante Aiuto;
- * - testo guida aggiornato con nota "I DATI RESTANO LOCALI".
- *
- * E2:
- * - collegamento RealScopusConnector se SCOPUS_API_KEY è configurata;
- * - fallback automatico a FakeScopusConnector se Scopus non è configurato;
- * - nessuna API key o token vengono stampati nei log.
- *
- * E3.4:
- * - rimosso refresh citazionale massivo dalla top bar;
- * - spostato Refresh IRIS nel pannello Pubblicazioni IRIS;
- * - aggiunto Refresh Scopus/Scholar sul dettaglio della pubblicazione selezionata.
- *
- * #229-B:
- * - mostra EID Scopus nella sezione "Numero Citazioni";
- * - mostra PARTIAL_DATA quando Scopus restituisce il citation count ma non permette l'accesso
- *   ai documenti citanti con l'API key attuale.
- *
- * F2.2:
- * - collega Scholar reale tramite SerpApi se SERPAPI_API_KEY è configurata;
- * - mantiene FakeScholarConnector come fallback se SerpApi non è configurata;
- * - aggiorna sia il citation count sia i documenti citanti Scholar dal pulsante della pubblicazione selezionata;
- * - non stampa mai la API key SerpApi nei log.
- *
- * F2.4:
- * - rinomina la sezione in "Numero Citazioni";
- * - sposta i documenti citanti in dialog tabellari separati;
- * - aggiunge pulsanti "Documenti citanti Scholar" e "Documenti citanti Scopus";
- * - mostra tutti i documenti citanti presenti in cache, senza limite lato UI.
+ * Dopo F4.2A:
+ * - la classe non costruisce più direttamente connector, repository e servizi;
+ * - il bootstrap infrastrutturale è stato spostato in AppBootstrap;
+ * - la UI riceve i servizi tramite AppServices;
+ * - restano qui, per ora, costruzione UI principale e dialog applicative.
  */
 public class ProfessorPublicationsApp extends Application {
 
@@ -159,137 +74,13 @@ public class ProfessorPublicationsApp extends Application {
 
     @Override
     public void start(Stage stage) {
-        HttpClient httpClient = HttpClient.newBuilder()
-                .connectTimeout(java.time.Duration.ofSeconds(15))
-                .build();
+        AppServices services = AppBootstrap.createServices();
 
-        IrisRuntimeSettings irisRuntimeSettings = new IrisRuntimeSettings(
-                "https://iris.unicas.it",
-                IrisAccessMode.AUTO,
-                "/api/discover/search/objects",
-                "/oai/request?verb=Identify",
-                15,
-                true
-        );
-
-        String irisRestBaseUrl = DotenvLoader.getOrDefault(
-                "IRIS_REST_BASE_URL",
-                "https://iris.unicas.it:443/"
-        );
-
-        String irisRestPathIr = DotenvLoader.getOrDefault(
-                "IRIS_REST_PATH_IR",
-                "rest/api/v1/"
-        );
-
-        String irisRestPathRm = DotenvLoader.getOrDefault(
-                "IRIS_REST_PATH_RM",
-                "rm/restservices/api/v1"
-        );
-
-        String irisRestUsername = DotenvLoader.getOrDefault(
-                "IRIS_REST_USERNAME",
-                "restadmin"
-        );
-
-        String irisRestPassword = DotenvLoader.getOrDefault(
-                "IRIS_REST_PASSWORD",
-                ""
-        );
-
-        int irisRestTimeoutSeconds = DotenvLoader.getIntOrDefault(
-                "IRIS_REST_TIMEOUT_SECONDS",
-                15
-        );
-
-        IrisRestAuthSettings irisRestAuthSettings = new IrisRestAuthSettings(
-                irisRestBaseUrl,
-                irisRestPathIr,
-                irisRestPathRm,
-                irisRestUsername,
-                irisRestPassword,
-                irisRestTimeoutSeconds
-        );
-
-        System.out.println("IRIS REST credentials loaded. Username configured: "
-                + !irisRestUsername.isBlank()
-                + ", password configured: "
-                + !irisRestPassword.isBlank());
-
-        RealIrisConnector realIrisConnector =
-                new RealIrisConnector(httpClient, irisRuntimeSettings, irisRestAuthSettings);
-
-        System.out.println("=== IRIS REAL PROBE ===");
-        System.out.println("Base URL: " + realIrisConnector.getProbeResult().baseUrl());
-        System.out.println("REST status: " + realIrisConnector.getProbeResult().restStatusCode());
-        System.out.println("OAI status: " + realIrisConnector.getProbeResult().oaiStatusCode());
-        System.out.println("REST supported: " + realIrisConnector.getProbeResult().restSupported());
-        System.out.println("OAI supported: " + realIrisConnector.getProbeResult().oaiSupported());
-        System.out.println("Capabilities: " + realIrisConnector.getProbeResult().capabilities());
-        System.out.println("Notes: " + realIrisConnector.getProbeResult().notes());
-        System.out.println("=======================");
-
-        IrisRestAdvancedProbe irisRestAdvancedProbe =
-                new IrisRestAdvancedProbe(
-                        HttpClient.newBuilder()
-                                .connectTimeout(java.time.Duration.ofSeconds(15))
-                                .followRedirects(HttpClient.Redirect.NEVER)
-                                .build(),
-                        "https://iris.unicas.it"
-                );
-
-        System.out.println("=== IRIS REST ADVANCED PROBE ===");
-        for (RestEndpointProbeResult result : irisRestAdvancedProbe.probeAll()) {
-            System.out.println("Method: " + result.method());
-            System.out.println("Path: " + result.path());
-            System.out.println("Status: " + result.statusCode());
-            System.out.println("Redirected: " + result.redirected());
-            System.out.println("Auth likely required: " + result.authLikelyRequired());
-            System.out.println("Endpoint exists likely: " + result.endpointExistsLikely());
-            System.out.println("Location: " + result.locationHeader());
-            System.out.println("Content-Type: " + result.contentType());
-            System.out.println("Notes: " + result.notes());
-            System.out.println("Body preview: " + result.bodyPreview());
-            System.out.println("--------------------------------");
-        }
-        System.out.println("================================");
-
-        System.out.println("=== IRIS AUTHENTICATED REST TESTS ===");
-        printAuthenticatedResult(realIrisConnector.probeAuthenticatedIrEcho());
-        printAuthenticatedResult(realIrisConnector.probeAuthenticatedRmEcho());
-        printAuthenticatedResult(realIrisConnector.probeAuthenticatedPersonByCrisId("rp00418"));
-        printAuthenticatedResult(realIrisConnector.probeAuthenticatedItemsByContextUser("rp00418"));
-        printAuthenticatedResult(realIrisConnector.probeAuthenticatedItemsByContextUserAndYear("rp00418", "2024"));
-        System.out.println("=====================================");
-
-        IrisConnector fakeIrisConnector = new FakeIrisConnector();
-        IrisConnector irisConnector = new HybridIrisConnector(fakeIrisConnector, realIrisConnector);
-
-        ScopusApiSettings scopusApiSettings = ScopusApiSettings.fromEnvironment();
-        ScopusConnector scopusConnector = createScopusConnector(scopusApiSettings);
-
-        SerpApiScholarSettings serpApiScholarSettings = SerpApiScholarSettings.fromEnvironment();
-        ScholarConnector scholarConnector = createScholarConnector(serpApiScholarSettings);
-
-        PublicationCacheRepository publicationCacheRepository =
-                new SqlitePublicationCacheRepository("jdbc:sqlite:prof-publications.db");
-
-        CitationCacheRepository citationCacheRepository =
-                new SqliteCitationCacheRepository("jdbc:sqlite:prof-publications.db");
-
-        this.professorSearchService = new DefaultProfessorSearchService(irisConnector);
-        this.publicationCatalogService =
-                new DefaultPublicationCatalogService(irisConnector, publicationCacheRepository);
-
-        DefaultCitationService defaultCitationService =
-                new DefaultCitationService(scopusConnector, scholarConnector, citationCacheRepository);
-
-        this.citationService = defaultCitationService;
-
-        this.bibtexService = new DefaultBibtexService(irisConnector, scopusConnector, scholarConnector);
-
-        this.professorLookupRepository =
-                new CsvProfessorLookupRepository("/lookup/professors-cf.csv");
+        this.professorSearchService = services.professorSearchService();
+        this.publicationCatalogService = services.publicationCatalogService();
+        this.citationService = services.citationService();
+        this.bibtexService = services.bibtexService();
+        this.professorLookupRepository = services.professorLookupRepository();
 
         BorderPane root = new BorderPane();
         root.getStyleClass().add("app-root");
@@ -310,46 +101,6 @@ public class ProfessorPublicationsApp extends Application {
         stage.setTitle("Professor Publications App");
         stage.setScene(scene);
         stage.show();
-    }
-
-    private ScopusConnector createScopusConnector(ScopusApiSettings scopusApiSettings) {
-        if (scopusApiSettings == null || !scopusApiSettings.isEnabled()) {
-            System.out.println("Scopus real connector disabled. SCOPUS_API_KEY not configured. Using FakeScopusConnector.");
-            return new FakeScopusConnector();
-        }
-
-        HttpClient scopusHttpClient = HttpClient.newBuilder()
-                .connectTimeout(java.time.Duration.ofSeconds(scopusApiSettings.timeoutSeconds()))
-                .build();
-
-        System.out.println("Scopus real connector enabled. "
-                + "baseUrl="
-                + scopusApiSettings.baseUrl()
-                + ", timeoutSeconds="
-                + scopusApiSettings.timeoutSeconds()
-                + ", instTokenConfigured="
-                + scopusApiSettings.hasInstToken());
-
-        return new RealScopusConnector(scopusHttpClient, scopusApiSettings);
-    }
-
-    private ScholarConnector createScholarConnector(SerpApiScholarSettings serpApiScholarSettings) {
-        if (serpApiScholarSettings == null || !serpApiScholarSettings.isEnabled()) {
-            System.out.println("SerpApi Scholar connector disabled. SERPAPI_API_KEY not configured. Using FakeScholarConnector.");
-            return new FakeScholarConnector();
-        }
-
-        HttpClient scholarHttpClient = HttpClient.newBuilder()
-                .connectTimeout(java.time.Duration.ofSeconds(serpApiScholarSettings.timeoutSeconds()))
-                .build();
-
-        System.out.println("SerpApi Scholar connector enabled. "
-                + "baseUrl="
-                + serpApiScholarSettings.baseUrl()
-                + ", timeoutSeconds="
-                + serpApiScholarSettings.timeoutSeconds());
-
-        return new SerpApiScholarConnector(scholarHttpClient, serpApiScholarSettings);
     }
 
     private void applyStylesheet(Scene scene) {
@@ -397,16 +148,6 @@ public class ProfessorPublicationsApp extends Application {
             Stage dialogStage = (Stage) dialog.getDialogPane().getScene().getWindow();
             dialogStage.getIcons().add(new Image(iconUrl.toExternalForm()));
         });
-    }
-
-    private void printAuthenticatedResult(AuthenticatedRestCallResult result) {
-        System.out.println("Method: " + result.method());
-        System.out.println("Path: " + result.path());
-        System.out.println("Status: " + result.statusCode());
-        System.out.println("Content-Type: " + result.contentType());
-        System.out.println("Notes: " + result.notes());
-        System.out.println("Body preview: " + result.bodyPreview());
-        System.out.println("--------------------------------");
     }
 
     private VBox buildTopBar() {
@@ -539,6 +280,10 @@ public class ProfessorPublicationsApp extends Application {
             {
                 bibtexButton.getStyleClass().add("secondary-button");
                 bibtexButton.setOnAction(event -> {
+                    if (getIndex() < 0 || getIndex() >= getTableView().getItems().size()) {
+                        return;
+                    }
+
                     Publication publication = getTableView().getItems().get(getIndex());
                     showBibtexForPublication(publication);
                 });
