@@ -9,6 +9,7 @@ import com.iadanza.profpublicationsapp.application.service.impl.DefaultCitationS
 import com.iadanza.profpublicationsapp.application.service.impl.DefaultProfessorSearchService;
 import com.iadanza.profpublicationsapp.application.service.impl.DefaultPublicationCatalogService;
 import com.iadanza.profpublicationsapp.domain.enums.IdentifierType;
+import com.iadanza.profpublicationsapp.domain.enums.SourceType;
 import com.iadanza.profpublicationsapp.domain.model.BibtexEntry;
 import com.iadanza.profpublicationsapp.domain.model.CitationSummary;
 import com.iadanza.profpublicationsapp.domain.model.CitingDocument;
@@ -20,6 +21,7 @@ import com.iadanza.profpublicationsapp.infrastructure.config.IrisAccessMode;
 import com.iadanza.profpublicationsapp.infrastructure.config.IrisRestAuthSettings;
 import com.iadanza.profpublicationsapp.infrastructure.config.IrisRuntimeSettings;
 import com.iadanza.profpublicationsapp.infrastructure.config.ScopusApiSettings;
+import com.iadanza.profpublicationsapp.infrastructure.config.SerpApiScholarSettings;
 import com.iadanza.profpublicationsapp.infrastructure.connector.HybridIrisConnector;
 import com.iadanza.profpublicationsapp.infrastructure.connector.IrisConnector;
 import com.iadanza.profpublicationsapp.infrastructure.connector.ScholarConnector;
@@ -29,6 +31,7 @@ import com.iadanza.profpublicationsapp.infrastructure.connector.fake.FakeScholar
 import com.iadanza.profpublicationsapp.infrastructure.connector.fake.FakeScopusConnector;
 import com.iadanza.profpublicationsapp.infrastructure.connector.real.RealIrisConnector;
 import com.iadanza.profpublicationsapp.infrastructure.connector.real.RealScopusConnector;
+import com.iadanza.profpublicationsapp.infrastructure.connector.real.SerpApiScholarConnector;
 import com.iadanza.profpublicationsapp.infrastructure.connector.real.diagnostic.AuthenticatedRestCallResult;
 import com.iadanza.profpublicationsapp.infrastructure.connector.real.diagnostic.IrisRestAdvancedProbe;
 import com.iadanza.profpublicationsapp.infrastructure.connector.real.diagnostic.RestEndpointProbeResult;
@@ -104,12 +107,24 @@ import java.util.concurrent.atomic.AtomicReference;
  * E3.4:
  * - rimosso refresh citazionale massivo dalla top bar;
  * - spostato Refresh IRIS nel pannello Pubblicazioni IRIS;
- * - aggiunto Refresh Scopus/Scholar pubblicazione sul dettaglio della pubblicazione selezionata.
+ * - aggiunto Refresh Scopus/Scholar sul dettaglio della pubblicazione selezionata.
  *
  * #229-B:
- * - mostra EID Scopus nella sezione "Citazioni e documenti citanti";
+ * - mostra EID Scopus nella sezione "Numero Citazioni";
  * - mostra PARTIAL_DATA quando Scopus restituisce il citation count ma non permette l'accesso
  *   ai documenti citanti con l'API key attuale.
+ *
+ * F2.2:
+ * - collega Scholar reale tramite SerpApi se SERPAPI_API_KEY è configurata;
+ * - mantiene FakeScholarConnector come fallback se SerpApi non è configurata;
+ * - aggiorna sia il citation count sia i documenti citanti Scholar dal pulsante della pubblicazione selezionata;
+ * - non stampa mai la API key SerpApi nei log.
+ *
+ * F2.4:
+ * - rinomina la sezione in "Numero Citazioni";
+ * - sposta i documenti citanti in dialog tabellari separati;
+ * - aggiunge pulsanti "Documenti citanti Scholar" e "Documenti citanti Scopus";
+ * - mostra tutti i documenti citanti presenti in cache, senza limite lato UI.
  */
 public class ProfessorPublicationsApp extends Application {
 
@@ -250,7 +265,8 @@ public class ProfessorPublicationsApp extends Application {
         ScopusApiSettings scopusApiSettings = ScopusApiSettings.fromEnvironment();
         ScopusConnector scopusConnector = createScopusConnector(scopusApiSettings);
 
-        ScholarConnector scholarConnector = new FakeScholarConnector();
+        SerpApiScholarSettings serpApiScholarSettings = SerpApiScholarSettings.fromEnvironment();
+        ScholarConnector scholarConnector = createScholarConnector(serpApiScholarSettings);
 
         PublicationCacheRepository publicationCacheRepository =
                 new SqlitePublicationCacheRepository("jdbc:sqlite:prof-publications.db");
@@ -312,6 +328,25 @@ public class ProfessorPublicationsApp extends Application {
                 + scopusApiSettings.hasInstToken());
 
         return new RealScopusConnector(scopusHttpClient, scopusApiSettings);
+    }
+
+    private ScholarConnector createScholarConnector(SerpApiScholarSettings serpApiScholarSettings) {
+        if (serpApiScholarSettings == null || !serpApiScholarSettings.isEnabled()) {
+            System.out.println("SerpApi Scholar connector disabled. SERPAPI_API_KEY not configured. Using FakeScholarConnector.");
+            return new FakeScholarConnector();
+        }
+
+        HttpClient scholarHttpClient = HttpClient.newBuilder()
+                .connectTimeout(java.time.Duration.ofSeconds(serpApiScholarSettings.timeoutSeconds()))
+                .build();
+
+        System.out.println("SerpApi Scholar connector enabled. "
+                + "baseUrl="
+                + serpApiScholarSettings.baseUrl()
+                + ", timeoutSeconds="
+                + serpApiScholarSettings.timeoutSeconds());
+
+        return new SerpApiScholarConnector(scholarHttpClient, serpApiScholarSettings);
     }
 
     private void applyStylesheet(Scene scene) {
@@ -470,7 +505,7 @@ public class ProfessorPublicationsApp extends Application {
         HBox.setHgrow(publicationFilterField, Priority.ALWAYS);
 
         Button refreshIrisButton = new Button("Refresh IRIS");
-        refreshIrisButton.getStyleClass().add("secondary-button");
+        refreshIrisButton.getStyleClass().add("primary-button");
         refreshIrisButton.setOnAction(event -> refreshProfessorPublications());
 
         HBox publicationSearchBar = new HBox(10, publicationFilterField, refreshIrisButton);
@@ -575,8 +610,8 @@ public class ProfessorPublicationsApp extends Application {
         Label publicationTitle = new Label("Dettaglio pubblicazione");
         publicationTitle.getStyleClass().add("section-title");
 
-        Button refreshSelectedCitationButton = new Button("Refresh Scopus/Scholar pubblicazione");
-        refreshSelectedCitationButton.getStyleClass().add("secondary-button");
+        Button refreshSelectedCitationButton = new Button("Refresh Scopus/Scholar");
+        refreshSelectedCitationButton.getStyleClass().add("primary-button");
         refreshSelectedCitationButton.setOnAction(event -> refreshSelectedPublicationCitationData());
 
         Region publicationHeaderSpacer = new Region();
@@ -595,8 +630,23 @@ public class ProfessorPublicationsApp extends Application {
         publicationDetailsArea.setWrapText(true);
         publicationDetailsArea.setPrefRowCount(12);
 
-        Label citationTitle = new Label("Citazioni e documenti citanti");
+        Label citationTitle = new Label("Numero Citazioni e Documenti Citanti");
         citationTitle.getStyleClass().add("section-title");
+
+        Button scholarCitingDocumentsButton = new Button("Documenti citanti Scholar");
+        scholarCitingDocumentsButton.getStyleClass().add("secondary-button");
+        scholarCitingDocumentsButton.setOnAction(event -> showCitingDocumentsDialog(SourceType.SCHOLAR));
+
+        Button scopusCitingDocumentsButton = new Button("Documenti citanti Scopus");
+        scopusCitingDocumentsButton.getStyleClass().add("secondary-button");
+        scopusCitingDocumentsButton.setOnAction(event -> showCitingDocumentsDialog(SourceType.SCOPUS));
+
+        HBox citingDocumentsButtonsBar = new HBox(
+                10,
+                scholarCitingDocumentsButton,
+                scopusCitingDocumentsButton
+        );
+        citingDocumentsButtonsBar.setAlignment(Pos.CENTER_LEFT);
 
         citationDetailsArea = new TextArea();
         citationDetailsArea.setEditable(false);
@@ -608,6 +658,7 @@ public class ProfessorPublicationsApp extends Application {
                 publicationHeader,
                 publicationDetailsArea,
                 citationTitle,
+                citingDocumentsButtonsBar,
                 citationDetailsArea
         );
         detailsPane.getStyleClass().add("panel");
@@ -1194,6 +1245,7 @@ public class ProfessorPublicationsApp extends Application {
         }
 
         CitationSummary updatedSummary = citationService.refreshCitationSummary(selectedPublication);
+        List<CitingDocument> updatedDocuments = citationService.refreshCitingDocuments(selectedPublication);
 
         showCitationDetails(selectedPublication);
 
@@ -1213,13 +1265,15 @@ public class ProfessorPublicationsApp extends Application {
                 ? " Stato documenti citanti Scopus: PARTIAL_DATA."
                 : "";
 
-        updateStatus("Citazioni aggiornate per la pubblicazione selezionata. "
+        updateStatus("Citazioni Scopus/Scholar aggiornate per la pubblicazione selezionata. "
                 + "Scopus: "
                 + scopusCount
                 + ", Scholar: "
                 + scholarCount
                 + ", EID Scopus: "
                 + scopusEid
+                + ", documenti citanti: "
+                + updatedDocuments.size()
                 + "."
                 + partialDataMessage);
     }
@@ -1364,6 +1418,14 @@ public class ProfessorPublicationsApp extends Application {
         CitationSummary summary = citationService.getCachedCitationSummary(publication);
         List<CitingDocument> citingDocuments = citationService.getCachedCitingDocuments(publication);
 
+        long scholarDocumentsCount = citingDocuments.stream()
+                .filter(document -> document.sourceType() == SourceType.SCHOLAR)
+                .count();
+
+        long scopusDocumentsCount = citingDocuments.stream()
+                .filter(document -> document.sourceType() == SourceType.SCOPUS)
+                .count();
+
         StringBuilder builder = new StringBuilder();
 
         builder.append("Citazioni Scopus: ")
@@ -1380,43 +1442,243 @@ public class ProfessorPublicationsApp extends Application {
 
         builder.append("Totale aggregato: ")
                 .append(summary.totalCitationCount() != null ? summary.totalCitationCount() : "N/D")
+                .append("\n\n");
+
+        builder.append("Documenti citanti Scholar in cache: ")
+                .append(scholarDocumentsCount)
                 .append("\n");
+
+        builder.append("Documenti citanti Scopus in cache: ")
+                .append(scopusDocumentsCount)
+                .append("\n\n");
 
         if (hasText(summary.scopusCitingDocumentsNote())) {
             builder.append("Stato documenti citanti Scopus: PARTIAL_DATA\n");
             builder.append("Nota Scopus: ")
                     .append(summary.scopusCitingDocumentsNote())
-                    .append("\n");
+                    .append("\n\n");
         }
 
-        builder.append("\n");
-        builder.append("Documenti citanti trovati: ").append(citingDocuments.size()).append("\n\n");
-
-        if (citingDocuments.isEmpty()) {
-            if (hasText(summary.scopusCitingDocumentsNote())) {
-                builder.append("Nessun documento citante Scopus salvato in cache.\n");
-                builder.append("Il conteggio citazionale Scopus è disponibile, ma l'elenco dei documenti citanti richiede permessi API aggiuntivi.\n");
-            } else {
-                builder.append("Nessun documento citante in cache.\n");
-                builder.append("Premi \"Refresh Scopus/Scholar pubblicazione\" per aggiornare le citazioni della pubblicazione selezionata.");
-            }
-        } else {
-            for (CitingDocument document : citingDocuments) {
-                builder.append("• ").append(document.title()).append("\n");
-                builder.append("  Autori: ")
-                        .append(document.authors() != null && !document.authors().isEmpty()
-                                ? String.join(", ", document.authors())
-                                : "N/D")
-                        .append("\n");
-                builder.append("  Anno: ").append(document.year() != null ? document.year() : "N/D").append("\n");
-                builder.append("  DOI: ").append(document.doi() != null ? document.doi() : "N/D").append("\n");
-                builder.append("  Sorgente: ").append(document.sourceType()).append("\n");
-                builder.append("  Stato: ").append(document.recordStatus()).append("\n");
-                builder.append("  URL: ").append(document.sourceUrl() != null ? document.sourceUrl() : "N/D").append("\n\n");
-            }
-        }
+        builder.append("Usa i pulsanti \"Documenti citanti Scholar\" e \"Documenti citanti Scopus\" ")
+                .append("per aprire l'elenco tabellare dei documenti citanti della pubblicazione selezionata.");
 
         citationDetailsArea.setText(builder.toString());
+    }
+
+    private void showCitingDocumentsDialog(SourceType sourceType) {
+        Publication selectedPublication = publicationsTable.getSelectionModel().getSelectedItem();
+
+        if (selectedPublication == null) {
+            updateStatus("Seleziona una pubblicazione prima di aprire i documenti citanti.");
+            return;
+        }
+
+        List<CitingDocument> sourceDocuments = sortCitingDocumentsByYearDesc(
+                citationService.getCachedCitingDocuments(selectedPublication)
+                        .stream()
+                        .filter(document -> document.sourceType() == sourceType)
+                        .toList()
+        );
+
+        Dialog<Void> dialog = new Dialog<>();
+        dialog.setTitle("Documenti citanti " + sourceDisplayName(sourceType));
+        dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
+        dialog.setResizable(true);
+        applyDialogIcon(dialog);
+        applyDialogStylesheet(dialog);
+
+        Label infoLabel = new Label(
+                "Pubblicazione selezionata: "
+                        + selectedPublication.title()
+                        + "\nDocumenti citanti "
+                        + sourceDisplayName(sourceType)
+                        + " trovati in cache: "
+                        + sourceDocuments.size()
+        );
+        infoLabel.setWrapText(true);
+
+        TextField filterField = new TextField();
+        filterField.setPromptText("Filtra per titolo, autore, anno, DOI o URL");
+        filterField.setPrefWidth(520);
+        HBox.setHgrow(filterField, Priority.ALWAYS);
+
+        ObservableList<CitingDocument> filteredDocuments =
+                FXCollections.observableArrayList(sourceDocuments);
+
+        TableView<CitingDocument> table = new TableView<>();
+        table.setItems(filteredDocuments);
+        table.setPrefSize(1080, 500);
+
+        TableColumn<CitingDocument, String> titleColumn = new TableColumn<>("Titolo");
+        titleColumn.setCellValueFactory(cellData ->
+                new ReadOnlyStringWrapper(
+                        cellData.getValue().title() != null ? cellData.getValue().title() : "N/D"
+                )
+        );
+        titleColumn.setPrefWidth(340);
+
+        TableColumn<CitingDocument, String> authorsColumn = new TableColumn<>("Autori");
+        authorsColumn.setCellValueFactory(cellData ->
+                new ReadOnlyStringWrapper(formatAuthors(cellData.getValue().authors()))
+        );
+        authorsColumn.setPrefWidth(240);
+
+        TableColumn<CitingDocument, Integer> yearColumn = new TableColumn<>("Anno");
+        yearColumn.setCellValueFactory(cellData ->
+                new ReadOnlyObjectWrapper<>(cellData.getValue().year())
+        );
+        yearColumn.setPrefWidth(70);
+
+        TableColumn<CitingDocument, String> doiColumn = new TableColumn<>("DOI");
+        doiColumn.setCellValueFactory(cellData ->
+                new ReadOnlyStringWrapper(
+                        cellData.getValue().doi() != null ? cellData.getValue().doi() : "N/D"
+                )
+        );
+        doiColumn.setPrefWidth(170);
+
+        TableColumn<CitingDocument, String> sourceColumn = new TableColumn<>("Sorgente");
+        sourceColumn.setCellValueFactory(cellData ->
+                new ReadOnlyStringWrapper(String.valueOf(cellData.getValue().sourceType()))
+        );
+        sourceColumn.setPrefWidth(90);
+
+        TableColumn<CitingDocument, String> statusColumn = new TableColumn<>("Stato");
+        statusColumn.setCellValueFactory(cellData ->
+                new ReadOnlyStringWrapper(String.valueOf(cellData.getValue().recordStatus()))
+        );
+        statusColumn.setPrefWidth(110);
+
+        TableColumn<CitingDocument, String> urlColumn = new TableColumn<>("URL");
+        urlColumn.setCellValueFactory(cellData ->
+                new ReadOnlyStringWrapper(
+                        cellData.getValue().sourceUrl() != null ? cellData.getValue().sourceUrl() : "N/D"
+                )
+        );
+        urlColumn.setPrefWidth(360);
+
+        table.getColumns().add(titleColumn);
+        table.getColumns().add(authorsColumn);
+        table.getColumns().add(yearColumn);
+        table.getColumns().add(doiColumn);
+        table.getColumns().add(sourceColumn);
+        table.getColumns().add(statusColumn);
+        table.getColumns().add(urlColumn);
+
+        filterField.textProperty().addListener((obs, oldValue, newValue) ->
+                refreshCitingDocumentsTable(filteredDocuments, sourceDocuments, newValue)
+        );
+
+        Label emptyInfoLabel = new Label(buildEmptyCitingDocumentsMessage(sourceType));
+        emptyInfoLabel.setWrapText(true);
+        emptyInfoLabel.setVisible(sourceDocuments.isEmpty());
+        emptyInfoLabel.setManaged(sourceDocuments.isEmpty());
+
+        HBox filterBar = new HBox(10, filterField);
+        filterBar.setAlignment(Pos.CENTER_LEFT);
+
+        VBox content = new VBox(10, infoLabel, filterBar, table, emptyInfoLabel);
+        content.getStyleClass().add("dialog-content");
+        content.setPadding(new Insets(10));
+        VBox.setVgrow(table, Priority.ALWAYS);
+
+        dialog.getDialogPane().setContent(content);
+        dialog.showAndWait();
+    }
+
+    private void refreshCitingDocumentsTable(
+            ObservableList<CitingDocument> filteredDocuments,
+            List<CitingDocument> allDocuments,
+            String query
+    ) {
+        String normalizedQuery = query != null ? query.trim().toLowerCase() : "";
+
+        if (normalizedQuery.isBlank()) {
+            filteredDocuments.setAll(sortCitingDocumentsByYearDesc(allDocuments));
+            return;
+        }
+
+        filteredDocuments.setAll(
+                sortCitingDocumentsByYearDesc(
+                        allDocuments.stream()
+                                .filter(document -> citingDocumentMatchesFilter(document, normalizedQuery))
+                                .toList()
+                )
+        );
+    }
+
+    private boolean citingDocumentMatchesFilter(CitingDocument document, String query) {
+        if (document == null) {
+            return false;
+        }
+
+        String title = document.title() != null ? document.title().toLowerCase() : "";
+        String authors = document.authors() != null
+                ? String.join(" ", document.authors()).toLowerCase()
+                : "";
+        String year = document.year() != null ? String.valueOf(document.year()) : "";
+        String doi = document.doi() != null ? document.doi().toLowerCase() : "";
+        String url = document.sourceUrl() != null ? document.sourceUrl().toLowerCase() : "";
+
+        return title.contains(query)
+                || authors.contains(query)
+                || year.contains(query)
+                || doi.contains(query)
+                || url.contains(query);
+    }
+
+    private List<CitingDocument> sortCitingDocumentsByYearDesc(List<CitingDocument> documents) {
+        if (documents == null || documents.isEmpty()) {
+            return List.of();
+        }
+
+        return documents.stream()
+                .sorted(
+                        Comparator.comparing(
+                                CitingDocument::year,
+                                Comparator.nullsLast(Comparator.reverseOrder())
+                        ).thenComparing(
+                                CitingDocument::title,
+                                Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER)
+                        )
+                )
+                .toList();
+    }
+
+    private String formatAuthors(List<String> authors) {
+        if (authors == null || authors.isEmpty()) {
+            return "N/D";
+        }
+
+        return String.join(", ", authors);
+    }
+
+    private String sourceDisplayName(SourceType sourceType) {
+        if (sourceType == SourceType.SCHOLAR) {
+            return "Scholar";
+        }
+
+        if (sourceType == SourceType.SCOPUS) {
+            return "Scopus";
+        }
+
+        return String.valueOf(sourceType);
+    }
+
+    private String buildEmptyCitingDocumentsMessage(SourceType sourceType) {
+        if (sourceType == SourceType.SCOPUS) {
+            return "Nessun documento citante Scopus disponibile in cache.\n"
+                    + "Il citation count Scopus può essere disponibile, ma l'elenco dei documenti citanti "
+                    + "richiede permessi API aggiuntivi oppure test da rete Ateneo/VPN.";
+        }
+
+        if (sourceType == SourceType.SCHOLAR) {
+            return "Nessun documento citante Scholar disponibile in cache.\n"
+                    + "Premi prima \"Refresh Scopus/Scholar\". "
+                    + "Se Scholar/SerpApi espone cited_by/cites_id, i documenti citanti verranno mostrati qui.";
+        }
+
+        return "Nessun documento citante disponibile in cache.";
     }
 
     private void resetProfessorSection() {
@@ -1430,7 +1692,7 @@ public class ProfessorPublicationsApp extends Application {
     }
 
     private void resetCitationDetails() {
-        citationDetailsArea.setText("Seleziona una pubblicazione e premi \"Refresh Scopus/Scholar pubblicazione\" per vedere i dettagli citazionali.");
+        citationDetailsArea.setText("Seleziona una pubblicazione e premi \"Refresh Scopus/Scholar\" per vedere il numero di citazioni.");
     }
 
     private boolean hasText(String value) {
