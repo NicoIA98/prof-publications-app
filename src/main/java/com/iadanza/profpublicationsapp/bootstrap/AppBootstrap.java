@@ -8,10 +8,12 @@ import com.iadanza.profpublicationsapp.application.service.impl.DefaultBibtexSer
 import com.iadanza.profpublicationsapp.application.service.impl.DefaultCitationService;
 import com.iadanza.profpublicationsapp.application.service.impl.DefaultProfessorSearchService;
 import com.iadanza.profpublicationsapp.application.service.impl.DefaultPublicationCatalogService;
-import com.iadanza.profpublicationsapp.infrastructure.config.DotenvLoader;
+import com.iadanza.profpublicationsapp.infrastructure.config.ConnectionSettings;
+import com.iadanza.profpublicationsapp.infrastructure.config.FileLocalSettingsRepository;
 import com.iadanza.profpublicationsapp.infrastructure.config.IrisAccessMode;
 import com.iadanza.profpublicationsapp.infrastructure.config.IrisRestAuthSettings;
 import com.iadanza.profpublicationsapp.infrastructure.config.IrisRuntimeSettings;
+import com.iadanza.profpublicationsapp.infrastructure.config.LocalSettingsRepository;
 import com.iadanza.profpublicationsapp.infrastructure.config.ScopusApiSettings;
 import com.iadanza.profpublicationsapp.infrastructure.config.SerpApiScholarSettings;
 import com.iadanza.profpublicationsapp.infrastructure.connector.HybridIrisConnector;
@@ -34,6 +36,7 @@ import com.iadanza.profpublicationsapp.infrastructure.persistence.PublicationCac
 import com.iadanza.profpublicationsapp.infrastructure.persistence.SqliteCitationCacheRepository;
 import com.iadanza.profpublicationsapp.infrastructure.persistence.SqlitePublicationCacheRepository;
 
+import java.io.IOException;
 import java.net.http.HttpClient;
 
 /**
@@ -41,14 +44,16 @@ import java.net.http.HttpClient;
  *
  * Responsabilità:
  * - costruire connector reali/fake;
- * - leggere configurazioni da .env / environment;
+ * - leggere configurazioni locali da settings.properties;
+ * - usare .env / variabili d'ambiente come fallback;
  * - creare repository SQLite;
  * - creare application services;
  * - restituire alla UI un oggetto AppServices già pronto.
  *
- * Nota:
- * in G1 questa classe diventerà il punto naturale in cui integrare
- * anche settings.properties salvato nella home utente.
+ * Ordine configurazione:
+ * 1. settings.properties locale in user.home/.prof-publications-app;
+ * 2. variabili d'ambiente / .env;
+ * 3. default applicativi.
  */
 public final class AppBootstrap {
 
@@ -56,6 +61,13 @@ public final class AppBootstrap {
     }
 
     public static AppServices createServices() {
+        LocalSettingsRepository localSettingsRepository = new FileLocalSettingsRepository();
+        boolean localSettingsFileExists = localSettingsRepository.exists();
+        ConnectionSettings connectionSettings = loadConnectionSettings(localSettingsRepository);
+
+        System.out.println("Local settings path: " + localSettingsRepository.getSettingsPath());
+        System.out.println("Local settings file found: " + localSettingsFileExists);
+
         HttpClient httpClient = HttpClient.newBuilder()
                 .connectTimeout(java.time.Duration.ofSeconds(15))
                 .build();
@@ -69,49 +81,16 @@ public final class AppBootstrap {
                 true
         );
 
-        String irisRestBaseUrl = DotenvLoader.getOrDefault(
-                "IRIS_REST_BASE_URL",
-                "https://iris.unicas.it:443/"
-        );
-
-        String irisRestPathIr = DotenvLoader.getOrDefault(
-                "IRIS_REST_PATH_IR",
-                "rest/api/v1/"
-        );
-
-        String irisRestPathRm = DotenvLoader.getOrDefault(
-                "IRIS_REST_PATH_RM",
-                "rm/restservices/api/v1"
-        );
-
-        String irisRestUsername = DotenvLoader.getOrDefault(
-                "IRIS_REST_USERNAME",
-                "restadmin"
-        );
-
-        String irisRestPassword = DotenvLoader.getOrDefault(
-                "IRIS_REST_PASSWORD",
-                ""
-        );
-
-        int irisRestTimeoutSeconds = DotenvLoader.getIntOrDefault(
-                "IRIS_REST_TIMEOUT_SECONDS",
-                15
-        );
-
-        IrisRestAuthSettings irisRestAuthSettings = new IrisRestAuthSettings(
-                irisRestBaseUrl,
-                irisRestPathIr,
-                irisRestPathRm,
-                irisRestUsername,
-                irisRestPassword,
-                irisRestTimeoutSeconds
-        );
+        IrisRestAuthSettings irisRestAuthSettings =
+                IrisRestAuthSettings.fromLocalSettingsWithEnvironmentFallback(
+                        connectionSettings,
+                        localSettingsFileExists
+                );
 
         System.out.println("IRIS REST credentials loaded. Username configured: "
-                + !irisRestUsername.isBlank()
+                + hasText(irisRestAuthSettings.username())
                 + ", password configured: "
-                + !irisRestPassword.isBlank());
+                + hasText(irisRestAuthSettings.password()));
 
         RealIrisConnector realIrisConnector =
                 new RealIrisConnector(httpClient, irisRuntimeSettings, irisRestAuthSettings);
@@ -123,10 +102,20 @@ public final class AppBootstrap {
         IrisConnector fakeIrisConnector = new FakeIrisConnector();
         IrisConnector irisConnector = new HybridIrisConnector(fakeIrisConnector, realIrisConnector);
 
-        ScopusApiSettings scopusApiSettings = ScopusApiSettings.fromEnvironment();
+        ScopusApiSettings scopusApiSettings =
+                ScopusApiSettings.fromLocalSettingsWithEnvironmentFallback(
+                        connectionSettings,
+                        localSettingsFileExists
+                );
+
         ScopusConnector scopusConnector = createScopusConnector(scopusApiSettings);
 
-        SerpApiScholarSettings serpApiScholarSettings = SerpApiScholarSettings.fromEnvironment();
+        SerpApiScholarSettings serpApiScholarSettings =
+                SerpApiScholarSettings.fromLocalSettingsWithEnvironmentFallback(
+                        connectionSettings,
+                        localSettingsFileExists
+                );
+
         ScholarConnector scholarConnector = createScholarConnector(serpApiScholarSettings);
 
         PublicationCacheRepository publicationCacheRepository =
@@ -157,6 +146,15 @@ public final class AppBootstrap {
                 bibtexService,
                 professorLookupRepository
         );
+    }
+
+    private static ConnectionSettings loadConnectionSettings(LocalSettingsRepository localSettingsRepository) {
+        try {
+            return localSettingsRepository.load();
+        } catch (IOException e) {
+            System.out.println("Local settings could not be loaded. Falling back to .env/environment.");
+            return ConnectionSettings.empty();
+        }
     }
 
     private static ScopusConnector createScopusConnector(ScopusApiSettings scopusApiSettings) {
@@ -256,5 +254,9 @@ public final class AppBootstrap {
         System.out.println("Notes: " + result.notes());
         System.out.println("Body preview: " + result.bodyPreview());
         System.out.println("--------------------------------");
+    }
+
+    private static boolean hasText(String value) {
+        return value != null && !value.trim().isBlank();
     }
 }

@@ -3,15 +3,13 @@ package com.iadanza.profpublicationsapp.infrastructure.config;
 /**
  * Configurazione runtime per l'integrazione Scopus / Elsevier.
  *
- * Le credenziali reali devono arrivare da .env o variabili d'ambiente,
- * mai da codice sorgente o file versionati.
+ * Ordine lettura:
+ * 1. settings.properties locale, se presente;
+ * 2. variabili d'ambiente / .env;
+ * 3. default applicativi.
  *
- * Fase E — Scopus reale minima:
- * - API key opzionale;
- * - institutional token opzionale;
- * - base URL configurabile;
- * - timeout configurabile;
- * - degradazione controllata se la API key manca.
+ * Le credenziali reali non devono mai essere committate
+ * e non devono mai essere stampate in chiaro nei log.
  */
 public record ScopusApiSettings(
         String apiKey,
@@ -59,6 +57,46 @@ public record ScopusApiSettings(
         );
     }
 
+    public static ScopusApiSettings fromLocalSettingsWithEnvironmentFallback(
+            ConnectionSettings localSettings,
+            boolean localSettingsFileExists
+    ) {
+        if (localSettings == null) {
+            return fromEnvironment();
+        }
+
+        String apiKey = firstText(
+                localSettings.scopusApiKey(),
+                DotenvLoader.getOrDefault("SCOPUS_API_KEY", "")
+        );
+
+        String instToken = firstText(
+                localSettings.scopusInstToken(),
+                DotenvLoader.getOrDefault("SCOPUS_INST_TOKEN", "")
+        );
+
+        String baseUrl = resolveString(
+                localSettings.scopusBaseUrl(),
+                localSettingsFileExists,
+                "SCOPUS_BASE_URL",
+                DEFAULT_BASE_URL
+        );
+
+        int timeoutSeconds = resolveInt(
+                localSettings.scopusTimeoutSeconds(),
+                localSettingsFileExists,
+                "SCOPUS_TIMEOUT_SECONDS",
+                DEFAULT_TIMEOUT_SECONDS
+        );
+
+        return new ScopusApiSettings(
+                apiKey,
+                instToken,
+                baseUrl,
+                timeoutSeconds
+        );
+    }
+
     public boolean hasApiKey() {
         return apiKey != null && !apiKey.isBlank();
     }
@@ -77,6 +115,44 @@ public record ScopusApiSettings(
 
     public String maskedInstToken() {
         return maskSecret(instToken);
+    }
+
+    private static String resolveString(
+            String localValue,
+            boolean localSettingsFileExists,
+            String environmentKey,
+            String defaultValue
+    ) {
+        if (localSettingsFileExists && hasText(localValue)) {
+            return localValue;
+        }
+
+        return DotenvLoader.getOrDefault(environmentKey, defaultValue);
+    }
+
+    private static int resolveInt(
+            int localValue,
+            boolean localSettingsFileExists,
+            String environmentKey,
+            int defaultValue
+    ) {
+        if (localSettingsFileExists && localValue > 0) {
+            return localValue;
+        }
+
+        return DotenvLoader.getIntOrDefault(environmentKey, defaultValue);
+    }
+
+    private static String firstText(String firstValue, String fallbackValue) {
+        if (hasText(firstValue)) {
+            return firstValue;
+        }
+
+        return fallbackValue;
+    }
+
+    private static boolean hasText(String value) {
+        return value != null && !value.trim().isBlank();
     }
 
     private static String normalize(String value) {
