@@ -4,6 +4,7 @@ import com.iadanza.profpublicationsapp.application.service.BibtexService;
 import com.iadanza.profpublicationsapp.application.service.CitationService;
 import com.iadanza.profpublicationsapp.application.service.ProfessorSearchService;
 import com.iadanza.profpublicationsapp.application.service.PublicationCatalogService;
+import com.iadanza.profpublicationsapp.infrastructure.config.LocalSettingsRepository;
 import com.iadanza.profpublicationsapp.infrastructure.lookup.ProfessorLookupRepository;
 
 /**
@@ -17,6 +18,7 @@ public record AppServices(
         PublicationCatalogService publicationCatalogService,
         CitationService citationService,
         BibtexService bibtexService,
-        ProfessorLookupRepository professorLookupRepository
+        ProfessorLookupRepository professorLookupRepository,
+        LocalSettingsRepository localSettingsRepository
 ) {
 }

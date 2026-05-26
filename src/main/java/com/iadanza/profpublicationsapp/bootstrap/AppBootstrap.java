@@ -144,7 +144,8 @@ public final class AppBootstrap {
                 publicationCatalogService,
                 citationService,
                 bibtexService,
-                professorLookupRepository
+                professorLookupRepository,
+                localSettingsRepository
         );
     }
 
