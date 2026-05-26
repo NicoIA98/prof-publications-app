@@ -8,7 +8,6 @@ import com.iadanza.profpublicationsapp.bootstrap.AppBootstrap;
 import com.iadanza.profpublicationsapp.bootstrap.AppServices;
 import com.iadanza.profpublicationsapp.domain.enums.IdentifierType;
 import com.iadanza.profpublicationsapp.domain.enums.SourceType;
-import com.iadanza.profpublicationsapp.domain.model.BibtexEntry;
 import com.iadanza.profpublicationsapp.domain.model.CitationSummary;
 import com.iadanza.profpublicationsapp.domain.model.CitingDocument;
 import com.iadanza.profpublicationsapp.domain.model.Professor;
@@ -16,6 +15,7 @@ import com.iadanza.profpublicationsapp.domain.model.ProfessorLookupEntry;
 import com.iadanza.profpublicationsapp.domain.model.Publication;
 import com.iadanza.profpublicationsapp.infrastructure.config.LocalSettingsRepository;
 import com.iadanza.profpublicationsapp.infrastructure.lookup.ProfessorLookupRepository;
+import com.iadanza.profpublicationsapp.ui.dialog.BibtexDialog;
 import com.iadanza.profpublicationsapp.ui.dialog.CitingDocumentsDialog;
 import com.iadanza.profpublicationsapp.ui.dialog.ConnectionSettingsDialog;
 import com.iadanza.profpublicationsapp.ui.dialog.ProfessorLookupDialog;
@@ -27,11 +27,8 @@ import javafx.collections.ObservableList;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
-import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
-import javafx.scene.control.ButtonType;
 import javafx.scene.control.ComboBox;
-import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
 import javafx.scene.control.SelectionMode;
 import javafx.scene.control.SplitPane;
@@ -41,25 +38,18 @@ import javafx.scene.control.TableView;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
 import javafx.scene.image.Image;
-import javafx.scene.input.Clipboard;
-import javafx.scene.input.ClipboardContent;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
-import javafx.stage.FileChooser;
 import javafx.stage.Stage;
+import javafx.stage.Window;
 
-import java.io.File;
-import java.io.IOException;
 import java.net.URL;
-import java.nio.file.Files;
-import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Locale;
 import java.util.Optional;
 
 /**
@@ -72,7 +62,8 @@ import java.util.Optional;
  * - dialog Impostazioni estratta in ui.dialog.ConnectionSettingsDialog;
  * - dialog Rubrica CF estratta in ui.dialog.ProfessorLookupDialog;
  * - dialog Documenti Citanti estratta in ui.dialog.CitingDocumentsDialog;
- * - UI principale e BibTeX ancora qui.
+ * - dialog BibTeX estratta in ui.dialog.BibtexDialog;
+ * - questa classe resta coordinatore UI principale.
  */
 public class ProfessorPublicationsApp extends Application {
 
@@ -146,17 +137,6 @@ public class ProfessorPublicationsApp extends Application {
         scene.getStylesheets().add(stylesheet.toExternalForm());
     }
 
-    private void applyDialogStylesheet(Dialog<?> dialog) {
-        URL stylesheet = getClass().getResource("/styles/app.css");
-
-        if (stylesheet == null) {
-            System.out.println("Stylesheet dialog non trovato: /styles/app.css");
-            return;
-        }
-
-        dialog.getDialogPane().getStylesheets().add(stylesheet.toExternalForm());
-    }
-
     private void applyApplicationIcon(Stage stage) {
         URL iconUrl = getClass().getResource("/icons/app-icon.png");
 
@@ -166,20 +146,6 @@ public class ProfessorPublicationsApp extends Application {
         }
 
         stage.getIcons().add(new Image(iconUrl.toExternalForm()));
-    }
-
-    private void applyDialogIcon(Dialog<?> dialog) {
-        URL iconUrl = getClass().getResource("/icons/app-icon.png");
-
-        if (iconUrl == null) {
-            System.out.println("Icona dialog non trovata: /icons/app-icon.png");
-            return;
-        }
-
-        dialog.setOnShown(event -> {
-            Stage dialogStage = (Stage) dialog.getDialogPane().getScene().getWindow();
-            dialogStage.getIcons().add(new Image(iconUrl.toExternalForm()));
-        });
     }
 
     private VBox buildTopBar() {
@@ -700,99 +666,11 @@ public class ProfessorPublicationsApp extends Application {
     }
 
     private void showBibtexForPublication(Publication publication) {
-        if (publication == null) {
-            updateStatus("Seleziona prima una pubblicazione.");
-            return;
-        }
-
-        Optional<BibtexEntry> result = bibtexService.resolveBibtex(publication);
-
-        if (result.isEmpty()) {
-            updateStatus("Impossibile generare o recuperare il BibTeX.");
-            return;
-        }
-
-        BibtexEntry bibtexEntry = result.get();
-        updateStatus("BibTeX ottenuto da sorgente: " + bibtexEntry.sourceType() + ".");
-
-        Dialog<Void> dialog = new Dialog<>();
-        dialog.setTitle("BibTeX - " + publication.title());
-        dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
-        dialog.setResizable(true);
-        applyDialogIcon(dialog);
-        applyDialogStylesheet(dialog);
-
-        TextArea bibtexArea = new TextArea(bibtexEntry.rawBibtex());
-        bibtexArea.setEditable(false);
-        bibtexArea.setWrapText(true);
-        bibtexArea.setPrefSize(700, 350);
-
-        Button copyButton = new Button("Copia BibTeX");
-        copyButton.getStyleClass().add("primary-button");
-        copyButton.setOnAction(event -> copyBibtexToClipboard(bibtexEntry.rawBibtex()));
-
-        Button saveButton = new Button("Salva .bib");
-        saveButton.getStyleClass().add("success-button");
-        saveButton.setOnAction(event -> saveBibtexToFile(bibtexEntry));
-
-        HBox actionBar = new HBox(10, copyButton, saveButton);
-        actionBar.getStyleClass().add("dialog-actions");
-        actionBar.setAlignment(Pos.CENTER_LEFT);
-
-        VBox dialogContent = new VBox(10, bibtexArea, actionBar);
-        dialogContent.getStyleClass().add("dialog-content");
-        dialogContent.setPadding(new Insets(10));
-        VBox.setVgrow(bibtexArea, Priority.ALWAYS);
-
-        dialog.getDialogPane().setContent(dialogContent);
-        dialog.showAndWait();
-    }
-
-    private void copyBibtexToClipboard(String bibtexText) {
-        ClipboardContent content = new ClipboardContent();
-        content.putString(bibtexText);
-        Clipboard.getSystemClipboard().setContent(content);
-        updateStatus("BibTeX copiato negli appunti.");
-    }
-
-    private void saveBibtexToFile(BibtexEntry bibtexEntry) {
-        FileChooser fileChooser = new FileChooser();
-        fileChooser.setTitle("Salva file BibTeX");
-        fileChooser.getExtensionFilters().add(
-                new FileChooser.ExtensionFilter("BibTeX files (*.bib)", "*.bib")
-        );
-
-        String suggestedFileName = bibtexEntry.citationKey() != null && !bibtexEntry.citationKey().isBlank()
-                ? bibtexEntry.citationKey() + ".bib"
-                : "citation.bib";
-
-        fileChooser.setInitialFileName(suggestedFileName);
-
-        Stage currentStage = (Stage) publicationsTable.getScene().getWindow();
-        File selectedFile = fileChooser.showSaveDialog(currentStage);
-
-        if (selectedFile == null) {
-            updateStatus("Salvataggio BibTeX annullato.");
-            return;
-        }
-
-        try {
-            Files.writeString(selectedFile.toPath(), bibtexEntry.rawBibtex());
-            updateStatus("BibTeX salvato in: " + selectedFile.getAbsolutePath());
-        } catch (IOException e) {
-            updateStatus("Errore durante il salvataggio del file BibTeX.");
-            showErrorAlert("Errore salvataggio file", "Impossibile salvare il file .bib selezionato.");
-        }
-    }
-
-    private void showErrorAlert(String title, String message) {
-        Alert alert = new Alert(Alert.AlertType.ERROR);
-        alert.setTitle(title);
-        alert.setHeaderText(null);
-        alert.setContentText(message != null ? message : "Errore non specificato.");
-        applyDialogIcon(alert);
-        applyDialogStylesheet(alert);
-        alert.showAndWait();
+        new BibtexDialog(
+                bibtexService,
+                getOwnerWindow(),
+                this::updateStatus
+        ).showForPublication(publication);
     }
 
     private void showProfessorDetails(Professor professor) {
@@ -911,202 +789,19 @@ public class ProfessorPublicationsApp extends Application {
     }
 
     private void showBibtexForCitingDocument(CitingDocument document) {
-        if (document == null) {
-            updateStatus("Seleziona prima un documento citante.");
-            return;
-        }
-
-        Optional<BibtexEntry> result = generateBibtexForCitingDocument(document);
-
-        if (result.isEmpty()) {
-            updateStatus("Impossibile generare il BibTeX per il documento citante.");
-            return;
-        }
-
-        BibtexEntry bibtexEntry = result.get();
-        updateStatus("BibTeX generato per documento citante da sorgente: "
-                + bibtexEntry.sourceType()
-                + ".");
-
-        Dialog<Void> dialog = new Dialog<>();
-        dialog.setTitle("BibTeX documento citante - " + safeDisplayText(document.title()));
-        dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
-        dialog.setResizable(true);
-        applyDialogIcon(dialog);
-        applyDialogStylesheet(dialog);
-
-        TextArea bibtexArea = new TextArea(bibtexEntry.rawBibtex());
-        bibtexArea.setEditable(false);
-        bibtexArea.setWrapText(true);
-        bibtexArea.setPrefSize(700, 350);
-
-        Button copyButton = new Button("Copia BibTeX");
-        copyButton.getStyleClass().add("primary-button");
-        copyButton.setOnAction(event -> copyBibtexToClipboard(bibtexEntry.rawBibtex()));
-
-        Button saveButton = new Button("Salva .bib");
-        saveButton.getStyleClass().add("success-button");
-        saveButton.setOnAction(event -> saveBibtexToFile(bibtexEntry));
-
-        HBox actionBar = new HBox(10, copyButton, saveButton);
-        actionBar.getStyleClass().add("dialog-actions");
-        actionBar.setAlignment(Pos.CENTER_LEFT);
-
-        VBox dialogContent = new VBox(10, bibtexArea, actionBar);
-        dialogContent.getStyleClass().add("dialog-content");
-        dialogContent.setPadding(new Insets(10));
-        VBox.setVgrow(bibtexArea, Priority.ALWAYS);
-
-        dialog.getDialogPane().setContent(dialogContent);
-        dialog.showAndWait();
+        new BibtexDialog(
+                bibtexService,
+                getOwnerWindow(),
+                this::updateStatus
+        ).showForCitingDocument(document);
     }
 
-    private Optional<BibtexEntry> generateBibtexForCitingDocument(CitingDocument document) {
-        if (document == null || !hasText(document.title())) {
-            return Optional.empty();
+    private Window getOwnerWindow() {
+        if (publicationsTable == null || publicationsTable.getScene() == null) {
+            return null;
         }
 
-        String citationKey = buildCitingDocumentCitationKey(document);
-        String entryType = hasText(document.doi()) ? "article" : "misc";
-
-        StringBuilder builder = new StringBuilder();
-
-        builder.append("@")
-                .append(entryType)
-                .append("{")
-                .append(citationKey)
-                .append(",\n");
-
-        builder.append("  title = {")
-                .append(escapeBibtexValue(document.title()))
-                .append("}");
-
-        if (document.authors() != null && !document.authors().isEmpty()) {
-            builder.append(",\n");
-            builder.append("  author = {")
-                    .append(escapeBibtexValue(String.join(" and ", document.authors())))
-                    .append("}");
-        }
-
-        if (document.year() != null) {
-            builder.append(",\n");
-            builder.append("  year = {")
-                    .append(document.year())
-                    .append("}");
-        }
-
-        if (hasText(document.doi())) {
-            builder.append(",\n");
-            builder.append("  doi = {")
-                    .append(escapeBibtexValue(document.doi()))
-                    .append("}");
-        }
-
-        if (hasText(document.sourceUrl())) {
-            builder.append(",\n");
-            builder.append("  url = {")
-                    .append(escapeBibtexValue(document.sourceUrl()))
-                    .append("}");
-        }
-
-        builder.append(",\n");
-        builder.append("  note = {Citing document retrieved from ")
-                .append(document.sourceType())
-                .append("}");
-
-        builder.append("\n}");
-
-        return Optional.of(new BibtexEntry(
-                citationKey,
-                entryType,
-                builder.toString(),
-                document.sourceType(),
-                document.recordStatus()
-        ));
-    }
-
-    private String buildCitingDocumentCitationKey(CitingDocument document) {
-        String firstAuthor = "citing";
-
-        if (document.authors() != null && !document.authors().isEmpty()) {
-            firstAuthor = document.authors().get(0);
-        }
-
-        String year = document.year() != null ? document.year().toString() : "nd";
-        String titlePart = document.title() != null ? document.title() : "document";
-
-        String normalizedAuthor = normalizeCitationKeyPart(firstAuthor);
-        String normalizedTitle = normalizeCitationKeyPart(firstWords(titlePart, 4));
-
-        String citationKey = normalizedAuthor + year + normalizedTitle;
-
-        if (citationKey.isBlank()) {
-            return "citingDocument";
-        }
-
-        return citationKey;
-    }
-
-    private String firstWords(String value, int maxWords) {
-        if (value == null || value.isBlank()) {
-            return "";
-        }
-
-        String[] words = value.trim().split("\\s+");
-        StringBuilder builder = new StringBuilder();
-
-        for (int i = 0; i < words.length && i < maxWords; i++) {
-            builder.append(words[i]);
-        }
-
-        return builder.toString();
-    }
-
-    private String normalizeCitationKeyPart(String value) {
-        if (value == null || value.isBlank()) {
-            return "";
-        }
-
-        String normalized = Normalizer.normalize(value, Normalizer.Form.NFD)
-                .replaceAll("\\p{M}", "");
-
-        return normalized
-                .toLowerCase(Locale.ROOT)
-                .replaceAll("[^a-z0-9]+", "")
-                .trim();
-    }
-
-    private String escapeBibtexValue(String value) {
-        if (value == null) {
-            return "";
-        }
-
-        return value
-                .replace("\\", "\\\\")
-                .replace("{", "\\{")
-                .replace("}", "\\}");
-    }
-
-    private String abbreviateForTable(String value, int maxLength) {
-        if (value == null) {
-            return "";
-        }
-
-        String normalized = value.trim();
-
-        if (normalized.length() <= maxLength) {
-            return normalized;
-        }
-
-        return normalized.substring(0, Math.max(0, maxLength - 3)) + "...";
-    }
-
-    private String safeDisplayText(String value) {
-        if (!hasText(value)) {
-            return "N/D";
-        }
-
-        return abbreviateForTable(value, 80);
+        return publicationsTable.getScene().getWindow();
     }
 
     private void resetProfessorSection() {
