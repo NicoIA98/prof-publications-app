@@ -15,13 +15,12 @@ import com.iadanza.profpublicationsapp.domain.model.ProfessorLookupEntry;
 import com.iadanza.profpublicationsapp.domain.model.Publication;
 import com.iadanza.profpublicationsapp.infrastructure.config.LocalSettingsRepository;
 import com.iadanza.profpublicationsapp.infrastructure.lookup.ProfessorLookupRepository;
+import com.iadanza.profpublicationsapp.ui.component.PublicationsTableFactory;
 import com.iadanza.profpublicationsapp.ui.dialog.BibtexDialog;
 import com.iadanza.profpublicationsapp.ui.dialog.CitingDocumentsDialog;
 import com.iadanza.profpublicationsapp.ui.dialog.ConnectionSettingsDialog;
 import com.iadanza.profpublicationsapp.ui.dialog.ProfessorLookupDialog;
 import javafx.application.Application;
-import javafx.beans.property.ReadOnlyObjectWrapper;
-import javafx.beans.property.ReadOnlyStringWrapper;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.geometry.Insets;
@@ -30,10 +29,7 @@ import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
-import javafx.scene.control.SelectionMode;
 import javafx.scene.control.SplitPane;
-import javafx.scene.control.TableCell;
-import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
@@ -63,6 +59,7 @@ import java.util.Optional;
  * - dialog Rubrica CF estratta in ui.dialog.ProfessorLookupDialog;
  * - dialog Documenti Citanti estratta in ui.dialog.CitingDocumentsDialog;
  * - dialog BibTeX estratta in ui.dialog.BibtexDialog;
+ * - tabella Pubblicazioni IRIS estratta in ui.component.PublicationsTableFactory;
  * - questa classe resta coordinatore UI principale.
  */
 public class ProfessorPublicationsApp extends Application {
@@ -258,7 +255,7 @@ public class ProfessorPublicationsApp extends Application {
         sectionTitle.getStyleClass().add("section-title");
 
         publicationFilterField = new TextField();
-        publicationFilterField.setPromptText("Filtra pubblicazioni per titolo, anno, autore, venue o DOI");
+        publicationFilterField.setPromptText("Filtra pubblicazioni per titolo, anno, autore o DOI");
         publicationFilterField.getStyleClass().add("publication-filter");
         publicationFilterField.textProperty().addListener((obs, oldValue, newValue) -> applyPublicationFilter());
         HBox.setHgrow(publicationFilterField, Priority.ALWAYS);
@@ -270,97 +267,12 @@ public class ProfessorPublicationsApp extends Application {
         HBox publicationSearchBar = new HBox(10, publicationFilterField, refreshIrisButton);
         publicationSearchBar.setAlignment(Pos.CENTER_LEFT);
 
-        publicationsTable = new TableView<>();
-        publicationsTable.getStyleClass().add("publications-table");
-        publicationsTable.getSelectionModel().setSelectionMode(SelectionMode.SINGLE);
-        publicationsTable.setItems(publicationItems);
-
-        TableColumn<Publication, String> titleColumn = new TableColumn<>("Titolo");
-        titleColumn.setCellValueFactory(cellData ->
-                new ReadOnlyStringWrapper(cellData.getValue().title())
+        publicationsTable = PublicationsTableFactory.create(
+                publicationItems,
+                this::handlePublicationSelected,
+                this::handlePublicationSelectionCleared,
+                this::showBibtexForPublication
         );
-        titleColumn.setPrefWidth(320);
-
-        TableColumn<Publication, Integer> yearColumn = new TableColumn<>("Anno");
-        yearColumn.setCellValueFactory(cellData ->
-                new ReadOnlyObjectWrapper<>(cellData.getValue().year())
-        );
-        yearColumn.setPrefWidth(70);
-
-        TableColumn<Publication, Void> bibtexColumn = new TableColumn<>("BibTeX");
-        bibtexColumn.setPrefWidth(85);
-        bibtexColumn.setCellFactory(param -> new TableCell<>() {
-            private final Button bibtexButton = new Button(".bib");
-
-            {
-                bibtexButton.getStyleClass().add("secondary-button");
-                bibtexButton.setOnAction(event -> {
-                    if (getIndex() < 0 || getIndex() >= getTableView().getItems().size()) {
-                        return;
-                    }
-
-                    Publication publication = getTableView().getItems().get(getIndex());
-                    showBibtexForPublication(publication);
-                });
-            }
-
-            @Override
-            protected void updateItem(Void item, boolean empty) {
-                super.updateItem(item, empty);
-
-                bibtexButton.getStyleClass().remove("bibtex-selected-button");
-
-                if (empty || getIndex() < 0 || getIndex() >= getTableView().getItems().size()) {
-                    setGraphic(null);
-                    return;
-                }
-
-                Publication rowPublication = getTableView().getItems().get(getIndex());
-                Publication selectedPublication = getTableView().getSelectionModel().getSelectedItem();
-
-                if (rowPublication != null && rowPublication.equals(selectedPublication)) {
-                    if (!bibtexButton.getStyleClass().contains("bibtex-selected-button")) {
-                        bibtexButton.getStyleClass().add("bibtex-selected-button");
-                    }
-                }
-
-                setGraphic(bibtexButton);
-            }
-        });
-
-        TableColumn<Publication, String> venueColumn = new TableColumn<>("Venue");
-        venueColumn.setCellValueFactory(cellData ->
-                new ReadOnlyStringWrapper(
-                        cellData.getValue().venue() != null ? cellData.getValue().venue() : ""
-                )
-        );
-        venueColumn.setPrefWidth(220);
-
-        TableColumn<Publication, String> doiColumn = new TableColumn<>("DOI");
-        doiColumn.setCellValueFactory(cellData ->
-                new ReadOnlyStringWrapper(
-                        cellData.getValue().doi() != null ? cellData.getValue().doi() : "N/D"
-                )
-        );
-        doiColumn.setPrefWidth(170);
-
-        publicationsTable.getColumns().add(titleColumn);
-        publicationsTable.getColumns().add(yearColumn);
-        publicationsTable.getColumns().add(bibtexColumn);
-        publicationsTable.getColumns().add(venueColumn);
-        publicationsTable.getColumns().add(doiColumn);
-
-        publicationsTable.getSelectionModel().selectedItemProperty().addListener((obs, oldValue, newValue) -> {
-            if (newValue != null) {
-                showPublicationDetails(newValue);
-                showCitationDetails(newValue);
-            } else {
-                resetPublicationDetails();
-                resetCitationDetails();
-            }
-
-            publicationsTable.refresh();
-        });
 
         VBox publicationsPane = new VBox(8, sectionTitle, publicationSearchBar, publicationsTable);
         publicationsPane.getStyleClass().add("panel");
@@ -368,6 +280,21 @@ public class ProfessorPublicationsApp extends Application {
         VBox.setVgrow(publicationsTable, Priority.ALWAYS);
 
         return publicationsPane;
+    }
+
+    private void handlePublicationSelected(Publication publication) {
+        if (publication == null) {
+            handlePublicationSelectionCleared();
+            return;
+        }
+
+        showPublicationDetails(publication);
+        showCitationDetails(publication);
+    }
+
+    private void handlePublicationSelectionCleared() {
+        resetPublicationDetails();
+        resetCitationDetails();
     }
 
     private VBox buildDetailsPane() {
