@@ -44,7 +44,7 @@ public final class PublicationsTableFactory {
         titleColumn.setCellValueFactory(cellData ->
                 new ReadOnlyStringWrapper(cellData.getValue().title())
         );
-        titleColumn.setPrefWidth(460);
+        titleColumn.setPrefWidth(340);
 
         TableColumn<Publication, Integer> yearColumn = new TableColumn<>("Anno");
         yearColumn.setCellValueFactory(cellData ->
