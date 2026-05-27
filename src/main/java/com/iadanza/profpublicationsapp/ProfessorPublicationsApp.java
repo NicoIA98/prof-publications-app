@@ -13,6 +13,7 @@ import com.iadanza.profpublicationsapp.domain.model.CitingDocument;
 import com.iadanza.profpublicationsapp.domain.model.Professor;
 import com.iadanza.profpublicationsapp.domain.model.ProfessorLookupEntry;
 import com.iadanza.profpublicationsapp.domain.model.Publication;
+import com.iadanza.profpublicationsapp.infrastructure.config.ConnectionSettings;
 import com.iadanza.profpublicationsapp.infrastructure.config.LocalSettingsRepository;
 import com.iadanza.profpublicationsapp.infrastructure.lookup.ProfessorLookupRepository;
 import com.iadanza.profpublicationsapp.ui.component.PublicationsTableFactory;
@@ -20,9 +21,11 @@ import com.iadanza.profpublicationsapp.ui.dialog.BibtexDialog;
 import com.iadanza.profpublicationsapp.ui.dialog.CitingDocumentsDialog;
 import com.iadanza.profpublicationsapp.ui.dialog.ConnectionSettingsDialog;
 import com.iadanza.profpublicationsapp.ui.dialog.ProfessorLookupDialog;
+import com.iadanza.profpublicationsapp.ui.dialog.StartupSettingsWarningDialog;
 import com.iadanza.profpublicationsapp.ui.formatter.CitationDetailsFormatter;
 import com.iadanza.profpublicationsapp.ui.formatter.PublicationDetailsFormatter;
 import javafx.application.Application;
+import javafx.application.Platform;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.geometry.Insets;
@@ -44,6 +47,7 @@ import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
 import javafx.stage.Window;
 
+import java.io.IOException;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -58,6 +62,7 @@ import java.util.Optional;
  * - servizi applicativi ricevuti tramite AppServices;
  * - gestione settings locali tramite LocalSettingsRepository;
  * - dialog Impostazioni estratta in ui.dialog.ConnectionSettingsDialog;
+ * - dialog primo avvio estratta in ui.dialog.StartupSettingsWarningDialog;
  * - dialog Rubrica CF estratta in ui.dialog.ProfessorLookupDialog;
  * - dialog Documenti Citanti estratta in ui.dialog.CitingDocumentsDialog;
  * - dialog BibTeX estratta in ui.dialog.BibtexDialog;
@@ -124,6 +129,8 @@ public class ProfessorPublicationsApp extends Application {
         stage.setTitle("Professor Publications App");
         stage.setScene(scene);
         stage.show();
+
+        Platform.runLater(this::showStartupSettingsWarningIfNeeded);
     }
 
     private void applyStylesheet(Scene scene) {
@@ -362,6 +369,34 @@ public class ProfessorPublicationsApp extends Application {
         VBox.setVgrow(citationDetailsArea, Priority.ALWAYS);
 
         return detailsPane;
+    }
+
+    private void showStartupSettingsWarningIfNeeded() {
+        ConnectionSettings settings;
+
+        try {
+            settings = localSettingsRepository.load().normalized();
+        } catch (IOException e) {
+            updateStatus("Impossibile leggere settings.properties. Configurazione iniziale richiesta.");
+            settings = ConnectionSettings.empty();
+        }
+
+        StartupSettingsWarningDialog startupDialog = new StartupSettingsWarningDialog(
+                settings,
+                localSettingsRepository.getSettingsPath()
+        );
+
+        if (!startupDialog.shouldShow()) {
+            return;
+        }
+
+        boolean openSettings = startupDialog.showAndWaitForOpenSettings();
+
+        if (openSettings) {
+            showConnectionSettingsDialog();
+        } else {
+            updateStatus("Modalità limitata: alcune sorgenti potrebbero non essere disponibili senza credenziali/API key.");
+        }
     }
 
     private void showConnectionSettingsDialog() {
