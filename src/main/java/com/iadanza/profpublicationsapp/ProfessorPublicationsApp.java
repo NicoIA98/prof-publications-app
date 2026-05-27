@@ -20,6 +20,8 @@ import com.iadanza.profpublicationsapp.ui.dialog.BibtexDialog;
 import com.iadanza.profpublicationsapp.ui.dialog.CitingDocumentsDialog;
 import com.iadanza.profpublicationsapp.ui.dialog.ConnectionSettingsDialog;
 import com.iadanza.profpublicationsapp.ui.dialog.ProfessorLookupDialog;
+import com.iadanza.profpublicationsapp.ui.formatter.CitationDetailsFormatter;
+import com.iadanza.profpublicationsapp.ui.formatter.PublicationDetailsFormatter;
 import javafx.application.Application;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
@@ -60,6 +62,7 @@ import java.util.Optional;
  * - dialog Documenti Citanti estratta in ui.dialog.CitingDocumentsDialog;
  * - dialog BibTeX estratta in ui.dialog.BibtexDialog;
  * - tabella Pubblicazioni IRIS estratta in ui.component.PublicationsTableFactory;
+ * - formatter dettagli pubblicazione/citazioni estratti in ui.formatter;
  * - questa classe resta coordinatore UI principale.
  */
 public class ProfessorPublicationsApp extends Application {
@@ -620,76 +623,18 @@ public class ProfessorPublicationsApp extends Application {
     }
 
     private void showPublicationDetails(Publication publication) {
-        String authorsText = publication.authors() != null && !publication.authors().isEmpty()
-                ? String.join(", ", publication.authors())
-                : "N/D";
-
-        StringBuilder builder = new StringBuilder();
-
-        builder.append("Titolo: ").append(publication.title()).append("\n\n");
-        builder.append("Autori: ").append(authorsText).append("\n");
-        builder.append("Anno: ").append(publication.year()).append("\n");
-        builder.append("Venue: ").append(publication.venue() != null ? publication.venue() : "N/D").append("\n");
-        builder.append("DOI: ").append(publication.doi() != null ? publication.doi() : "N/D").append("\n");
-        builder.append("Stato record: ").append(publication.recordStatus()).append("\n");
-        builder.append("Sorgente primaria: ").append(publication.primarySource()).append("\n");
-        builder.append("URL sorgente: ").append(publication.sourceUrl() != null ? publication.sourceUrl() : "N/D").append("\n\n");
-
-        builder.append("Abstract:\n");
-        builder.append(publication.abstractText() != null ? publication.abstractText() : "N/D");
-
-        publicationDetailsArea.setText(builder.toString());
+        publicationDetailsArea.setText(
+                PublicationDetailsFormatter.format(publication)
+        );
     }
 
     private void showCitationDetails(Publication publication) {
         CitationSummary summary = citationService.getCachedCitationSummary(publication);
         List<CitingDocument> citingDocuments = citationService.getCachedCitingDocuments(publication);
 
-        long scholarDocumentsCount = citingDocuments.stream()
-                .filter(document -> document.sourceType() == SourceType.SCHOLAR)
-                .count();
-
-        long scopusDocumentsCount = citingDocuments.stream()
-                .filter(document -> document.sourceType() == SourceType.SCOPUS)
-                .count();
-
-        StringBuilder builder = new StringBuilder();
-
-        builder.append("Citazioni Scopus: ")
-                .append(summary.scopusCitationCount() != null ? summary.scopusCitationCount() : "N/D")
-                .append("\n");
-
-        builder.append("EID Scopus: ")
-                .append(hasText(summary.scopusEid()) ? summary.scopusEid() : "N/D")
-                .append("\n");
-
-        builder.append("Citazioni Scholar: ")
-                .append(summary.scholarCitationCount() != null ? summary.scholarCitationCount() : "N/D")
-                .append("\n");
-
-        builder.append("Totale aggregato: ")
-                .append(summary.totalCitationCount() != null ? summary.totalCitationCount() : "N/D")
-                .append("\n\n");
-
-        builder.append("Documenti citanti Scholar in cache: ")
-                .append(scholarDocumentsCount)
-                .append("\n");
-
-        builder.append("Documenti citanti Scopus in cache: ")
-                .append(scopusDocumentsCount)
-                .append("\n\n");
-
-        if (hasText(summary.scopusCitingDocumentsNote())) {
-            builder.append("Stato documenti citanti Scopus: PARTIAL_DATA\n");
-            builder.append("Nota Scopus: ")
-                    .append(summary.scopusCitingDocumentsNote())
-                    .append("\n\n");
-        }
-
-        builder.append("Usa i pulsanti \"Documenti citanti Scholar\" e \"Documenti citanti Scopus\" ")
-                .append("per aprire l'elenco tabellare dei documenti citanti della pubblicazione selezionata.");
-
-        citationDetailsArea.setText(builder.toString());
+        citationDetailsArea.setText(
+                CitationDetailsFormatter.format(summary, citingDocuments)
+        );
     }
 
     private void showCitingDocumentsDialog(SourceType sourceType) {
