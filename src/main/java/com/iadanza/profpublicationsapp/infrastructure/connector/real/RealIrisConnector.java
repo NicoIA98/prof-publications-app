@@ -41,6 +41,11 @@ import java.util.Optional;
  * - se il server restituisce 51 record anche quando chiediamo 100, continua con offset 51, 102, ecc.;
  * - usa count, offset e numero reale di item restituiti;
  * - mantiene log diagnostici per verificare il numero di record recuperati.
+ *
+ * Nota sicurezza:
+ * - non stampa password IRIS o token Basic;
+ * - non stampa body JSON autenticati contenenti dati anagrafici o metadati IRIS;
+ * - mantiene visibile solo il body preview degli endpoint /echo, perché non contiene dati sensibili.
  */
 public class RealIrisConnector implements IrisConnector {
 
@@ -399,7 +404,7 @@ public class RealIrisConnector implements IrisConnector {
                         + ", status="
                         + response.statusCode()
                         + ", bodyPreview="
-                        + preview(response.body(), 300));
+                        + preview(sanitizeForLog(response.body()), 300));
                 return Optional.empty();
             }
 
@@ -416,7 +421,7 @@ public class RealIrisConnector implements IrisConnector {
                     + ", error="
                     + e.getClass().getSimpleName()
                     + ": "
-                    + e.getMessage());
+                    + sanitizeForLog(e.getMessage()));
             return Optional.empty();
         }
     }
@@ -539,7 +544,10 @@ public class RealIrisConnector implements IrisConnector {
                     -1,
                     null,
                     "",
-                    "Errore chiamata autenticata: " + e.getClass().getSimpleName() + " - " + e.getMessage()
+                    "Errore chiamata autenticata: "
+                            + e.getClass().getSimpleName()
+                            + " - "
+                            + sanitizeForLog(e.getMessage())
             );
         }
     }
@@ -603,14 +611,17 @@ public class RealIrisConnector implements IrisConnector {
                     -1,
                     null,
                     "",
-                    "Errore chiamata autenticata: " + e.getClass().getSimpleName() + " - " + e.getMessage()
+                    "Errore chiamata autenticata: "
+                            + e.getClass().getSimpleName()
+                            + " - "
+                            + sanitizeForLog(e.getMessage())
             );
         }
     }
 
     private AuthenticatedRestCallResult toResult(String method, String path, HttpResponse<String> response) {
         String body = response.body() != null ? response.body() : "";
-        String preview = preview(body, 300);
+        String preview = buildAuthenticatedBodyPreview(path, body);
         String contentType = response.headers().firstValue("Content-Type").orElse(null);
 
         String notes;
@@ -682,6 +693,32 @@ public class RealIrisConnector implements IrisConnector {
         String first = firstName != null ? firstName.trim() : "";
         String last = lastName != null ? lastName.trim() : "";
         return (first + " " + last).trim();
+    }
+
+    private String buildAuthenticatedBodyPreview(String path, String body) {
+        if (path == null || path.isBlank()) {
+            return "[omesso: risposta autenticata IRIS non stampata nei log]";
+        }
+
+        String normalizedPath = path.toLowerCase();
+
+        if (normalizedPath.endsWith("/echo")) {
+            return preview(sanitizeForLog(body), 300);
+        }
+
+        return "[omesso: risposta autenticata IRIS non stampata nei log]";
+    }
+
+    private String sanitizeForLog(String value) {
+        if (value == null) {
+            return "";
+        }
+
+        return value
+                .replaceAll("(?i)(authorization:\\s*basic\\s+)[a-z0-9+/=._-]+", "$1***")
+                .replaceAll("(?i)(password=)[^&\\s\"']+", "$1***")
+                .replaceAll("(?i)(token=)[^&\\s\"']+", "$1***")
+                .replaceAll("(?i)(api_key=)[^&\\s\"']+", "$1***");
     }
 
     private String preview(String text, int maxLength) {

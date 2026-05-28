@@ -42,6 +42,10 @@ import java.util.regex.Pattern;
  * non c'è un limite massimo lato codice. Se una pubblicazione ha molte migliaia di citazioni,
  * il recupero completo può consumare molte query SerpApi. In caso di errore/quota, il connector
  * restituisce i documenti già raccolti fino a quel momento.
+ *
+ * Nota sicurezza:
+ * il connector non stampa mai la SERPAPI_API_KEY nei log. Eventuali response body o messaggi
+ * di eccezione vengono sanitizzati prima della stampa.
  */
 public class SerpApiScholarConnector implements ScholarConnector {
 
@@ -136,7 +140,7 @@ public class SerpApiScholarConnector implements ScholarConnector {
                     + ", error="
                     + e.getClass().getSimpleName()
                     + ": "
-                    + e.getMessage());
+                    + sanitizeExceptionMessage(e));
             return Optional.empty();
         }
     }
@@ -194,7 +198,7 @@ public class SerpApiScholarConnector implements ScholarConnector {
                     + ", error="
                     + e.getClass().getSimpleName()
                     + ": "
-                    + e.getMessage());
+                    + sanitizeExceptionMessage(e));
             return List.of();
         }
     }
@@ -234,7 +238,7 @@ public class SerpApiScholarConnector implements ScholarConnector {
 
         if (root.hasNonNull("error")) {
             System.out.println("SerpApi Scholar publication search returned error: "
-                    + root.path("error").asText());
+                    + sanitizeForLog(root.path("error").asText()));
             return Optional.empty();
         }
 
@@ -291,7 +295,7 @@ public class SerpApiScholarConnector implements ScholarConnector {
                         + "page="
                         + page
                         + ", error="
-                        + root.path("error").asText());
+                        + sanitizeForLog(root.path("error").asText()));
                 break;
             }
 
@@ -627,7 +631,7 @@ public class SerpApiScholarConnector implements ScholarConnector {
     }
 
     private void logNonSuccessResponse(String operation, int statusCode, String responseBody) {
-        String preview = abbreviate(responseBody, 500);
+        String preview = abbreviate(sanitizeForLog(responseBody), 500);
 
         switch (statusCode) {
             case 400 -> System.out.println("SerpApi Scholar " + operation
@@ -662,6 +666,26 @@ public class SerpApiScholarConnector implements ScholarConnector {
 
     private String safeLogValue(String value) {
         return value != null && !value.isBlank() ? value : "N/D";
+    }
+
+    private String sanitizeForLog(String value) {
+        if (value == null) {
+            return "";
+        }
+
+        return value
+                .replaceAll("(?i)(api_key=)[^&\\s\"']+", "$1***")
+                .replaceAll("(?i)(api_key%3D)[^&\\s\"']+", "$1***")
+                .replaceAll("(?i)(serpapi_api_key=)[^&\\s\"']+", "$1***")
+                .replaceAll("(?i)(key=)[^&\\s\"']+", "$1***");
+    }
+
+    private String sanitizeExceptionMessage(Exception e) {
+        if (e == null || e.getMessage() == null) {
+            return "";
+        }
+
+        return sanitizeForLog(e.getMessage());
     }
 
     private String encode(String value) {
