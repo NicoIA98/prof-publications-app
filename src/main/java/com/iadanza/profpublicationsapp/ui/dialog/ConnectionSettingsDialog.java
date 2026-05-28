@@ -2,20 +2,22 @@ package com.iadanza.profpublicationsapp.ui.dialog;
 
 import com.iadanza.profpublicationsapp.infrastructure.config.ConnectionSettings;
 import com.iadanza.profpublicationsapp.infrastructure.config.LocalSettingsRepository;
-import javafx.event.ActionEvent;
 import javafx.geometry.Insets;
+import javafx.geometry.Pos;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
-import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
 import javafx.scene.control.PasswordField;
+import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
 import javafx.scene.image.Image;
-import javafx.scene.layout.Priority;
-import javafx.scene.layout.VBox;
 import javafx.scene.layout.GridPane;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
+import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
 
 import java.io.IOException;
@@ -27,6 +29,7 @@ import java.util.function.Consumer;
  *
  * Responsabilità:
  * - mostrare i campi per IRIS, Scopus e SerpApi;
+ * - mostrare istruzioni operative tramite pulsante Aiuto;
  * - validare input minimi;
  * - salvare settings.properties tramite LocalSettingsRepository;
  * - non stampare mai API key o password nei log.
@@ -53,8 +56,16 @@ public class ConnectionSettingsDialog {
         applyDialogIcon(dialog);
         applyDialogStylesheet(dialog);
 
-        ButtonType saveButtonType = new ButtonType("Salva", ButtonBar.ButtonData.OK_DONE);
-        dialog.getDialogPane().getButtonTypes().addAll(saveButtonType, ButtonType.CANCEL);
+        /*
+         * ButtonType tecnico nascosto.
+         * Serve a JavaFX per rendere la dialog chiudibile correttamente con X,
+         * Esc e chiusura finestra principale, anche se usiamo pulsanti custom.
+         */
+        dialog.getDialogPane().getButtonTypes().add(ButtonType.CANCEL);
+
+        Button hiddenCancelButton = (Button) dialog.getDialogPane().lookupButton(ButtonType.CANCEL);
+        hiddenCancelButton.setVisible(false);
+        hiddenCancelButton.setManaged(false);
 
         Label introLabel = new Label(
                 "Inserisci qui le credenziali locali dell'applicazione. "
@@ -94,11 +105,6 @@ public class ConnectionSettingsDialog {
         serpApiKeyField.setPromptText("SERPAPI_API_KEY");
         serpApiKeyField.setText(currentSettings.serpApiApiKey());
 
-        Label restartLabel = new Label(
-                "Nota: dopo il salvataggio riavvia l'applicazione per applicare le nuove API key ai connector."
-        );
-        restartLabel.setWrapText(true);
-
         GridPane formGrid = new GridPane();
         formGrid.setHgap(10);
         formGrid.setVgap(8);
@@ -128,21 +134,54 @@ public class ConnectionSettingsDialog {
         GridPane.setHgrow(scopusInstTokenField, Priority.ALWAYS);
         GridPane.setHgrow(serpApiKeyField, Priority.ALWAYS);
 
+        Label helpHintLabel = new Label(
+                "Premi \"? Aiuto\" per leggere le istruzioni su come ottenere le API key Scopus e SerpApi."
+        );
+        helpHintLabel.setWrapText(true);
+
+        Label restartLabel = new Label(
+                "Nota: dopo il salvataggio riavvia l'applicazione per applicare le nuove API key ai connector."
+        );
+        restartLabel.setWrapText(true);
+
+        Button helpButton = new Button("? Aiuto");
+        helpButton.getStyleClass().add("cf-help-bib-style-button");
+        helpButton.setOnAction(event -> showApiKeyInstructionsHelpDialog());
+
+        Button saveButton = new Button("Salva");
+        saveButton.getStyleClass().add("primary-button");
+
+        Button cancelButton = new Button("Annulla");
+        cancelButton.setOnAction(event -> dialog.close());
+
+        Region actionSpacer = new Region();
+        HBox.setHgrow(actionSpacer, Priority.ALWAYS);
+
+        HBox actionBar = new HBox(
+                12,
+                helpButton,
+                actionSpacer,
+                saveButton,
+                cancelButton
+        );
+        actionBar.setAlignment(Pos.CENTER_LEFT);
+
         VBox content = new VBox(
                 10,
                 introLabel,
                 pathLabel,
                 formGrid,
-                restartLabel
+                helpHintLabel,
+                restartLabel,
+                actionBar
         );
         content.getStyleClass().add("dialog-content");
         content.setPadding(new Insets(10));
-        content.setPrefWidth(680);
+        content.setPrefWidth(820);
 
         dialog.getDialogPane().setContent(content);
 
-        Button saveButton = (Button) dialog.getDialogPane().lookupButton(saveButtonType);
-        saveButton.addEventFilter(ActionEvent.ACTION, event -> {
+        saveButton.setOnAction(event -> {
             String validationError = validateConnectionSettingsInput(
                     irisUsernameField.getText(),
                     irisPasswordField.getText(),
@@ -153,7 +192,6 @@ public class ConnectionSettingsDialog {
 
             if (validationError != null) {
                 showErrorAlert("Impostazioni non valide", validationError);
-                event.consume();
                 return;
             }
 
@@ -180,16 +218,78 @@ public class ConnectionSettingsDialog {
                                 + localSettingsRepository.getSettingsPath()
                                 + "\n\nRiavvia l'applicazione per applicare le nuove API key."
                 );
+
+                dialog.close();
             } catch (IOException e) {
                 showErrorAlert(
                         "Errore salvataggio impostazioni",
                         "Non è stato possibile salvare il file settings.properties."
                 );
-                event.consume();
             }
         });
 
         dialog.showAndWait();
+    }
+
+    private void showApiKeyInstructionsHelpDialog() {
+        Dialog<Void> dialog = new Dialog<>();
+        dialog.setTitle("Aiuto API key");
+        dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
+        dialog.setResizable(true);
+        applyDialogIcon(dialog);
+        applyDialogStylesheet(dialog);
+
+        TextArea helpArea = new TextArea(buildApiKeyInstructionsText());
+        helpArea.setEditable(false);
+        helpArea.setWrapText(true);
+        helpArea.setPrefSize(720, 520);
+
+        VBox content = new VBox(10, helpArea);
+        content.getStyleClass().add("dialog-content");
+        content.setPadding(new Insets(10));
+        VBox.setVgrow(helpArea, Priority.ALWAYS);
+
+        dialog.getDialogPane().setContent(content);
+        dialog.showAndWait();
+    }
+
+    private String buildApiKeyInstructionsText() {
+        return """
+                SCOPUS / ELSEVIER
+                1. Vai sul portale Elsevier Developer Portal:
+                   https://dev.elsevier.com
+                2. Accedi con il tuo account personale o istituzionale.
+                3. Crea una nuova API key dal portale sviluppatori.
+                4. Inserisci la chiave nel campo:
+                   SCOPUS_API_KEY
+                5. Il campo SCOPUS_INST_TOKEN è opzionale.
+                   Può essere richiesto in alcuni scenari istituzionali.
+                   In altri casi l'accesso può dipendere dalla rete di Ateneo, dalla VPN o dall'IP da cui partono le richieste.
+                6. Nota per la demo:
+                   se Scopus restituisce solo il numero di citazioni ma non i documenti citanti,
+                   l'app continuerà a funzionare in modalità PARTIAL_DATA.
+
+                GOOGLE SCHOLAR TRAMITE SERPAPI
+                1. Vai sulla dashboard SerpApi:
+                   https://serpapi.com/dashboard
+                2. Crea o recupera la tua API key personale.
+                3. Inserisci la chiave nel campo:
+                   SERPAPI_API_KEY
+                4. L'app usa SerpApi per interrogare Google Scholar, senza scraping diretto custom.
+                5. Per la ricerca Scholar viene usato l'engine:
+                   google_scholar
+                6. Per le citazioni esportabili può essere usato:
+                   google_scholar_cite
+                   con result_id quando disponibile.
+                7. Nota:
+                   la disponibilità di risultati, citazioni e documenti citanti dipende dai dati esposti da SerpApi,
+                   dai limiti del piano attivo e dalla risposta di Google Scholar.
+
+                SICUREZZA LOCALE
+                - Le API key vengono salvate solo nel file locale settings.properties.
+                - Non condividere screenshot o log contenenti API key.
+                - L'app non deve stampare password o API key in console.
+                """;
     }
 
     private ConnectionSettings loadConnectionSettingsForDialog() {
