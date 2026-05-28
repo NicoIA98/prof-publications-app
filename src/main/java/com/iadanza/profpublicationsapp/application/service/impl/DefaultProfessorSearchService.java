@@ -5,12 +5,13 @@ import com.iadanza.profpublicationsapp.domain.enums.IdentifierType;
 import com.iadanza.profpublicationsapp.domain.model.Professor;
 import com.iadanza.profpublicationsapp.infrastructure.connector.IrisConnector;
 
-import java.util.List;
 import java.util.Optional;
 
 /**
- * Implementazione base del servizio di ricerca professori.
- * In questa fase iniziale la ricerca usa IRIS come sorgente principale.
+ * Implementazione del servizio di ricerca professori.
+ *
+ * La ricerca usa IRIS come sorgente istituzionale primaria
+ * e avviene tramite identificativi reali.
  */
 public class DefaultProfessorSearchService implements ProfessorSearchService {
 
@@ -18,11 +19,6 @@ public class DefaultProfessorSearchService implements ProfessorSearchService {
 
     public DefaultProfessorSearchService(IrisConnector irisConnector) {
         this.irisConnector = irisConnector;
-    }
-
-    @Override
-    public List<Professor> searchByFreeText(String query) {
-        return irisConnector.searchProfessors(query);
     }
 
     @Override

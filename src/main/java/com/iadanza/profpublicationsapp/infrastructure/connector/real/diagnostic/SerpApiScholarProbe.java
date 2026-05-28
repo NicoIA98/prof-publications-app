@@ -29,7 +29,7 @@ import java.time.Duration;
  *
  * Program arguments opzionali:
  * - nessuno: usa una pubblicazione di test già nota;
- * - testo libero: usa quel testo come query Scholar;
+ * - query manuale: usa quel testo come query Scholar;
  * - --cites 123456789: prova direttamente i documenti citanti.
  *
  * Nota:

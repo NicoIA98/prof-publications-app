@@ -126,11 +126,6 @@ public class RealIrisConnector implements IrisConnector {
     }
 
     @Override
-    public List<Professor> searchProfessors(String query) {
-        return List.of();
-    }
-
-    @Override
     public Optional<Professor> findProfessorByIdentifier(IdentifierType identifierType, String value) {
         if (value == null || value.isBlank() || !hasAuthenticatedRestConfiguration()) {
             return Optional.empty();

@@ -68,6 +68,7 @@ import java.util.Optional;
  * - dialog BibTeX estratta in ui.dialog.BibtexDialog;
  * - tabella Pubblicazioni IRIS estratta in ui.component.PublicationsTableFactory;
  * - formatter dettagli pubblicazione/citazioni estratti in ui.formatter;
+ * - ricerca professore limitata a identificativi reali;
  * - questa classe resta coordinatore UI principale.
  */
 public class ProfessorPublicationsApp extends Application {
@@ -120,7 +121,7 @@ public class ProfessorPublicationsApp extends Application {
         resetProfessorSection();
         resetPublicationDetails();
         resetCitationDetails();
-        updateStatus("Applicazione avviata. Cerca per testo libero, ORCID, IRIS ID o Codice fiscale.");
+        updateStatus("Applicazione avviata. Cerca per IRIS ID o Codice fiscale.");
 
         Scene scene = new Scene(root, 1320, 780);
         applyStylesheet(scene);
@@ -160,8 +161,6 @@ public class ProfessorPublicationsApp extends Application {
 
         searchModeCombo = new ComboBox<>();
         searchModeCombo.getItems().addAll(
-                "Testo libero",
-                "ORCID",
                 "IRIS ID",
                 "Codice fiscale"
         );
@@ -170,7 +169,7 @@ public class ProfessorPublicationsApp extends Application {
         searchModeCombo.setPrefWidth(160);
 
         searchInputField = new TextField();
-        searchInputField.setPromptText("Es. rp00418 / ORCID / codice fiscale / nome docente");
+        searchInputField.setPromptText("Es. rp00418 / codice fiscale");
         searchInputField.setPrefWidth(340);
         searchInputField.setOnAction(event -> searchProfessor());
 
@@ -508,15 +507,9 @@ public class ProfessorPublicationsApp extends Application {
             return;
         }
 
-        List<Professor> results;
-
-        if ("Testo libero".equals(selectedMode)) {
-            results = professorSearchService.searchByFreeText(query);
-        } else {
-            IdentifierType identifierType = mapSearchModeToIdentifierType(selectedMode);
-            Optional<Professor> professor = professorSearchService.findByIdentifier(identifierType, query);
-            results = professor.map(List::of).orElse(List.of());
-        }
+        IdentifierType identifierType = mapSearchModeToIdentifierType(selectedMode);
+        Optional<Professor> professor = professorSearchService.findByIdentifier(identifierType, query);
+        List<Professor> results = professor.map(List::of).orElse(List.of());
 
         if (results.isEmpty()) {
             selectedProfessor = null;
@@ -548,10 +541,9 @@ public class ProfessorPublicationsApp extends Application {
 
     private IdentifierType mapSearchModeToIdentifierType(String searchMode) {
         return switch (searchMode) {
-            case "ORCID" -> IdentifierType.ORCID;
             case "IRIS ID" -> IdentifierType.IRIS_ID;
             case "Codice fiscale" -> IdentifierType.CODICE_FISCALE;
-            default -> IdentifierType.ORCID;
+            default -> IdentifierType.IRIS_ID;
         };
     }
 

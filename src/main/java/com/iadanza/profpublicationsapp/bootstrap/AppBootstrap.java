@@ -8,6 +8,12 @@ import com.iadanza.profpublicationsapp.application.service.impl.DefaultBibtexSer
 import com.iadanza.profpublicationsapp.application.service.impl.DefaultCitationService;
 import com.iadanza.profpublicationsapp.application.service.impl.DefaultProfessorSearchService;
 import com.iadanza.profpublicationsapp.application.service.impl.DefaultPublicationCatalogService;
+import com.iadanza.profpublicationsapp.domain.model.BibtexEntry;
+import com.iadanza.profpublicationsapp.domain.model.CitationSummary;
+import com.iadanza.profpublicationsapp.domain.model.CitingDocument;
+import com.iadanza.profpublicationsapp.domain.model.Professor;
+import com.iadanza.profpublicationsapp.domain.model.Publication;
+import com.iadanza.profpublicationsapp.domain.model.ScholarAuthorMapping;
 import com.iadanza.profpublicationsapp.infrastructure.config.ConnectionSettings;
 import com.iadanza.profpublicationsapp.infrastructure.config.FileLocalSettingsRepository;
 import com.iadanza.profpublicationsapp.infrastructure.config.IrisAccessMode;
@@ -16,13 +22,9 @@ import com.iadanza.profpublicationsapp.infrastructure.config.IrisRuntimeSettings
 import com.iadanza.profpublicationsapp.infrastructure.config.LocalSettingsRepository;
 import com.iadanza.profpublicationsapp.infrastructure.config.ScopusApiSettings;
 import com.iadanza.profpublicationsapp.infrastructure.config.SerpApiScholarSettings;
-import com.iadanza.profpublicationsapp.infrastructure.connector.HybridIrisConnector;
 import com.iadanza.profpublicationsapp.infrastructure.connector.IrisConnector;
 import com.iadanza.profpublicationsapp.infrastructure.connector.ScholarConnector;
 import com.iadanza.profpublicationsapp.infrastructure.connector.ScopusConnector;
-import com.iadanza.profpublicationsapp.infrastructure.connector.fake.FakeIrisConnector;
-import com.iadanza.profpublicationsapp.infrastructure.connector.fake.FakeScholarConnector;
-import com.iadanza.profpublicationsapp.infrastructure.connector.fake.FakeScopusConnector;
 import com.iadanza.profpublicationsapp.infrastructure.connector.real.RealIrisConnector;
 import com.iadanza.profpublicationsapp.infrastructure.connector.real.RealScopusConnector;
 import com.iadanza.profpublicationsapp.infrastructure.connector.real.SerpApiScholarConnector;
@@ -38,12 +40,14 @@ import com.iadanza.profpublicationsapp.infrastructure.persistence.SqlitePublicat
 
 import java.io.IOException;
 import java.net.http.HttpClient;
+import java.util.List;
+import java.util.Optional;
 
 /**
  * Bootstrap applicativo.
  *
  * Responsabilità:
- * - costruire connector reali/fake;
+ * - costruire connector reali oppure connector non disponibili quando mancano le API key;
  * - leggere configurazioni locali da settings.properties;
  * - usare .env / variabili d'ambiente come fallback;
  * - creare repository SQLite;
@@ -54,6 +58,12 @@ import java.net.http.HttpClient;
  * 1. settings.properties locale in user.home/.prof-publications-app;
  * 2. variabili d'ambiente / .env;
  * 3. default applicativi.
+ *
+ * Nota demo/finale:
+ * - i connector fake non vengono più usati;
+ * - IRIS usa direttamente RealIrisConnector;
+ * - se Scopus o SerpApi non sono configurati, l'app restituisce dati vuoti
+ *   e non inventa citazioni, documenti citanti o BibTeX.
  */
 public final class AppBootstrap {
 
@@ -99,8 +109,7 @@ public final class AppBootstrap {
         printIrisAdvancedProbe();
         printIrisAuthenticatedTests(realIrisConnector);
 
-        IrisConnector fakeIrisConnector = new FakeIrisConnector();
-        IrisConnector irisConnector = new HybridIrisConnector(fakeIrisConnector, realIrisConnector);
+        IrisConnector irisConnector = realIrisConnector;
 
         ScopusApiSettings scopusApiSettings =
                 ScopusApiSettings.fromLocalSettingsWithEnvironmentFallback(
@@ -160,8 +169,8 @@ public final class AppBootstrap {
 
     private static ScopusConnector createScopusConnector(ScopusApiSettings scopusApiSettings) {
         if (scopusApiSettings == null || !scopusApiSettings.isEnabled()) {
-            System.out.println("Scopus real connector disabled. SCOPUS_API_KEY not configured. Using FakeScopusConnector.");
-            return new FakeScopusConnector();
+            System.out.println("Scopus real connector unavailable. SCOPUS_API_KEY not configured.");
+            return new UnavailableScopusConnector();
         }
 
         HttpClient scopusHttpClient = HttpClient.newBuilder()
@@ -181,8 +190,8 @@ public final class AppBootstrap {
 
     private static ScholarConnector createScholarConnector(SerpApiScholarSettings serpApiScholarSettings) {
         if (serpApiScholarSettings == null || !serpApiScholarSettings.isEnabled()) {
-            System.out.println("SerpApi Scholar connector disabled. SERPAPI_API_KEY not configured. Using FakeScholarConnector.");
-            return new FakeScholarConnector();
+            System.out.println("SerpApi Scholar connector unavailable. SERPAPI_API_KEY not configured.");
+            return new UnavailableScholarConnector();
         }
 
         HttpClient scholarHttpClient = HttpClient.newBuilder()
@@ -259,5 +268,65 @@ public final class AppBootstrap {
 
     private static boolean hasText(String value) {
         return value != null && !value.trim().isBlank();
+    }
+
+    /**
+     * Connector Scopus non disponibile.
+     *
+     * Non è un fake: non simula citazioni, documenti citanti o BibTeX.
+     * Serve solo a mantenere l'app avviabile quando manca SCOPUS_API_KEY.
+     */
+    private static final class UnavailableScopusConnector implements ScopusConnector {
+
+        @Override
+        public Optional<CitationSummary> fetchCitationSummary(Publication publication) {
+            System.out.println("Scopus citation summary skipped. SCOPUS_API_KEY not configured.");
+            return Optional.empty();
+        }
+
+        @Override
+        public List<CitingDocument> findCitingDocuments(Publication publication) {
+            System.out.println("Scopus citing documents skipped. SCOPUS_API_KEY not configured.");
+            return List.of();
+        }
+
+        @Override
+        public Optional<BibtexEntry> fetchBibtexEntry(Publication publication) {
+            System.out.println("Scopus BibTeX lookup skipped. SCOPUS_API_KEY not configured.");
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * Connector Scholar non disponibile.
+     *
+     * Non è un fake: non simula citazioni, documenti citanti o BibTeX.
+     * Serve solo a mantenere l'app avviabile quando manca SERPAPI_API_KEY.
+     */
+    private static final class UnavailableScholarConnector implements ScholarConnector {
+
+        @Override
+        public Optional<ScholarAuthorMapping> findScholarAuthorMapping(Professor professor) {
+            System.out.println("Scholar author mapping skipped. SERPAPI_API_KEY not configured.");
+            return Optional.empty();
+        }
+
+        @Override
+        public Optional<CitationSummary> fetchCitationSummary(Publication publication) {
+            System.out.println("Scholar citation summary skipped. SERPAPI_API_KEY not configured.");
+            return Optional.empty();
+        }
+
+        @Override
+        public List<CitingDocument> findCitingDocuments(Publication publication) {
+            System.out.println("Scholar citing documents skipped. SERPAPI_API_KEY not configured.");
+            return List.of();
+        }
+
+        @Override
+        public Optional<BibtexEntry> fetchBibtexEntry(Publication publication) {
+            System.out.println("Scholar BibTeX lookup skipped. SERPAPI_API_KEY not configured.");
+            return Optional.empty();
+        }
     }
 }

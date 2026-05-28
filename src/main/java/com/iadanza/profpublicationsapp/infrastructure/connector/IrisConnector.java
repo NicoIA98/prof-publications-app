@@ -14,8 +14,6 @@ import java.util.Optional;
  */
 public interface IrisConnector {
 
-    List<Professor> searchProfessors(String query);
-
     Optional<Professor> findProfessorByIdentifier(IdentifierType identifierType, String value);
 
     List<Publication> fetchProfessorPublications(Professor professor);
