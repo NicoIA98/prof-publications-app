@@ -13,10 +13,13 @@ import javafx.scene.control.PasswordField;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
 import javafx.scene.image.Image;
+import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
+import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
 
@@ -29,6 +32,7 @@ import java.util.function.Consumer;
  *
  * Responsabilità:
  * - mostrare i campi per IRIS, Scopus e SerpApi;
+ * - mostrare/nascondere temporaneamente password e API key;
  * - mostrare istruzioni operative tramite pulsante Aiuto;
  * - validare input minimi;
  * - salvare settings.properties tramite LocalSettingsRepository;
@@ -87,6 +91,12 @@ public class ConnectionSettingsDialog {
         irisPasswordField.setPromptText("Password IRIS REST");
         irisPasswordField.setText(currentSettings.irisRestPassword());
 
+        TextField irisPasswordVisibleField = createVisibleSecretTextField(irisPasswordField);
+        StackPane irisPasswordContainer = createSecretFieldContainer(
+                irisPasswordField,
+                irisPasswordVisibleField
+        );
+
         Label scopusSectionLabel = new Label("Scopus / Elsevier");
         scopusSectionLabel.getStyleClass().add("section-title");
 
@@ -94,9 +104,21 @@ public class ConnectionSettingsDialog {
         scopusApiKeyField.setPromptText("SCOPUS_API_KEY");
         scopusApiKeyField.setText(currentSettings.scopusApiKey());
 
+        TextField scopusApiKeyVisibleField = createVisibleSecretTextField(scopusApiKeyField);
+        StackPane scopusApiKeyContainer = createSecretFieldContainer(
+                scopusApiKeyField,
+                scopusApiKeyVisibleField
+        );
+
         PasswordField scopusInstTokenField = new PasswordField();
         scopusInstTokenField.setPromptText("SCOPUS_INST_TOKEN opzionale");
         scopusInstTokenField.setText(currentSettings.scopusInstToken());
+
+        TextField scopusInstTokenVisibleField = createVisibleSecretTextField(scopusInstTokenField);
+        StackPane scopusInstTokenContainer = createSecretFieldContainer(
+                scopusInstTokenField,
+                scopusInstTokenVisibleField
+        );
 
         Label scholarSectionLabel = new Label("Google Scholar tramite SerpApi");
         scholarSectionLabel.getStyleClass().add("section-title");
@@ -104,6 +126,12 @@ public class ConnectionSettingsDialog {
         PasswordField serpApiKeyField = new PasswordField();
         serpApiKeyField.setPromptText("SERPAPI_API_KEY");
         serpApiKeyField.setText(currentSettings.serpApiApiKey());
+
+        TextField serpApiKeyVisibleField = createVisibleSecretTextField(serpApiKeyField);
+        StackPane serpApiKeyContainer = createSecretFieldContainer(
+                serpApiKeyField,
+                serpApiKeyVisibleField
+        );
 
         GridPane formGrid = new GridPane();
         formGrid.setHgap(10);
@@ -116,23 +144,56 @@ public class ConnectionSettingsDialog {
         formGrid.add(new Label("Username"), 0, row);
         formGrid.add(irisUsernameField, 1, row++);
         formGrid.add(new Label("Password"), 0, row);
-        formGrid.add(irisPasswordField, 1, row++);
+        formGrid.add(irisPasswordContainer, 1, row++);
 
         formGrid.add(scopusSectionLabel, 0, row++, 2, 1);
         formGrid.add(new Label("API key"), 0, row);
-        formGrid.add(scopusApiKeyField, 1, row++);
+        formGrid.add(scopusApiKeyContainer, 1, row++);
         formGrid.add(new Label("Institutional token"), 0, row);
-        formGrid.add(scopusInstTokenField, 1, row++);
+        formGrid.add(scopusInstTokenContainer, 1, row++);
 
         formGrid.add(scholarSectionLabel, 0, row++, 2, 1);
         formGrid.add(new Label("SerpApi API key"), 0, row);
-        formGrid.add(serpApiKeyField, 1, row++);
+        formGrid.add(serpApiKeyContainer, 1, row++);
 
         GridPane.setHgrow(irisUsernameField, Priority.ALWAYS);
-        GridPane.setHgrow(irisPasswordField, Priority.ALWAYS);
-        GridPane.setHgrow(scopusApiKeyField, Priority.ALWAYS);
-        GridPane.setHgrow(scopusInstTokenField, Priority.ALWAYS);
-        GridPane.setHgrow(serpApiKeyField, Priority.ALWAYS);
+        GridPane.setHgrow(irisPasswordContainer, Priority.ALWAYS);
+        GridPane.setHgrow(scopusApiKeyContainer, Priority.ALWAYS);
+        GridPane.setHgrow(scopusInstTokenContainer, Priority.ALWAYS);
+        GridPane.setHgrow(serpApiKeyContainer, Priority.ALWAYS);
+
+        Button toggleSecretsButton = new Button("Mostra API key");
+        toggleSecretsButton.getStyleClass().add("secondary-button");
+        toggleSecretsButton.setMinWidth(160);
+        toggleSecretsButton.setPrefWidth(160);
+
+        Label visibilityHintLabel = new Label(
+                "Le API key e la password IRIS sono mascherate di default. "
+                        + "Usa questo pulsante solo se devi controllare o correggere i valori."
+        );
+        visibilityHintLabel.setWrapText(true);
+
+        HBox visibilityBar = new HBox(
+                10,
+                toggleSecretsButton,
+                visibilityHintLabel
+        );
+        visibilityBar.setAlignment(Pos.CENTER_LEFT);
+
+        toggleSecretsButton.setOnAction(event -> {
+            boolean showSecrets = !irisPasswordVisibleField.isVisible();
+
+            setSecretFieldVisibility(irisPasswordField, irisPasswordVisibleField, showSecrets);
+            setSecretFieldVisibility(scopusApiKeyField, scopusApiKeyVisibleField, showSecrets);
+            setSecretFieldVisibility(scopusInstTokenField, scopusInstTokenVisibleField, showSecrets);
+            setSecretFieldVisibility(serpApiKeyField, serpApiKeyVisibleField, showSecrets);
+
+            toggleSecretsButton.setText(showSecrets ? "Nascondi API key" : "Mostra API key");
+
+            statusConsumer.accept(showSecrets
+                    ? "API key visibili temporaneamente nella dialog impostazioni."
+                    : "API key nuovamente mascherate nella dialog impostazioni.");
+        });
 
         Label helpHintLabel = new Label(
                 "Premi \"? Aiuto\" per leggere le istruzioni su come ottenere le API key Scopus e SerpApi."
@@ -171,6 +232,7 @@ public class ConnectionSettingsDialog {
                 introLabel,
                 pathLabel,
                 formGrid,
+                visibilityBar,
                 helpHintLabel,
                 restartLabel,
                 actionBar
@@ -180,6 +242,13 @@ public class ConnectionSettingsDialog {
         content.setPrefWidth(820);
 
         dialog.getDialogPane().setContent(content);
+
+        dialog.getDialogPane().addEventFilter(KeyEvent.KEY_PRESSED, event -> {
+            if (event.getCode() == KeyCode.ESCAPE) {
+                dialog.close();
+                event.consume();
+            }
+        });
 
         saveButton.setOnAction(event -> {
             String validationError = validateConnectionSettingsInput(
@@ -229,6 +298,40 @@ public class ConnectionSettingsDialog {
         });
 
         dialog.showAndWait();
+    }
+
+    private TextField createVisibleSecretTextField(PasswordField passwordField) {
+        TextField visibleField = new TextField();
+        visibleField.setPromptText(passwordField.getPromptText());
+        visibleField.textProperty().bindBidirectional(passwordField.textProperty());
+        visibleField.setVisible(false);
+        visibleField.setManaged(false);
+        return visibleField;
+    }
+
+    private StackPane createSecretFieldContainer(
+            PasswordField passwordField,
+            TextField visibleField
+    ) {
+        passwordField.setMaxWidth(Double.MAX_VALUE);
+        visibleField.setMaxWidth(Double.MAX_VALUE);
+
+        StackPane container = new StackPane(passwordField, visibleField);
+        container.setMaxWidth(Double.MAX_VALUE);
+
+        return container;
+    }
+
+    private void setSecretFieldVisibility(
+            PasswordField passwordField,
+            TextField visibleField,
+            boolean showSecret
+    ) {
+        passwordField.setVisible(!showSecret);
+        passwordField.setManaged(!showSecret);
+
+        visibleField.setVisible(showSecret);
+        visibleField.setManaged(showSecret);
     }
 
     private void showApiKeyInstructionsHelpDialog() {
