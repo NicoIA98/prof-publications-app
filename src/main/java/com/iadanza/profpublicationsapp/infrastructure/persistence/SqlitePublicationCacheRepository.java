@@ -14,7 +14,6 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Optional;
 
 /**
  * Implementazione SQLite della cache delle pubblicazioni.
@@ -99,32 +98,6 @@ public class SqlitePublicationCacheRepository implements PublicationCacheReposit
             throw new RuntimeException("Errore durante il salvataggio della cache SQLite delle pubblicazioni", e);
         } catch (IOException e) {
             throw new UncheckedIOException("Errore durante la serializzazione JSON delle pubblicazioni", e);
-        }
-    }
-
-    @Override
-    public Optional<String> findLastRefreshAt(Professor professor) {
-        String sql = """
-                SELECT last_refresh_at
-                FROM professor_publication_cache
-                WHERE professor_key = ?
-                """;
-
-        try (Connection connection = getConnection();
-             PreparedStatement statement = connection.prepareStatement(sql)) {
-
-            statement.setString(1, buildProfessorKey(professor));
-
-            try (ResultSet resultSet = statement.executeQuery()) {
-                if (!resultSet.next()) {
-                    return Optional.empty();
-                }
-
-                return Optional.ofNullable(resultSet.getString("last_refresh_at"));
-            }
-
-        } catch (SQLException e) {
-            throw new RuntimeException("Errore durante la lettura del timestamp di refresh", e);
         }
     }
 

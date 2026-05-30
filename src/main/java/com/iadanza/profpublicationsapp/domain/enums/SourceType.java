@@ -7,7 +7,5 @@ public enum SourceType {
     IRIS,
     SCOPUS,
     SCHOLAR,
-    SERP_API,
-    LOCAL_CACHE,
     MANUAL
 }

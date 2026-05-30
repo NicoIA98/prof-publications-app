@@ -31,17 +31,18 @@ import java.util.regex.Pattern;
 /**
  * Connector reale per Google Scholar tramite SerpApi.
  *
- * Versione F2.4:
+ * Responsabilità:
  * - recupera citation count Scholar;
  * - recupera documenti citanti Scholar tramite cites_id;
- * - segue la paginazione SerpApi senza imporre un limite massimo applicativo;
+ * - segue la paginazione SerpApi quando disponibile;
+ * - prova una paginazione manuale controllata se SerpApi non espone next;
  * - evita scraping diretto custom di Google Scholar;
  * - degrada senza crash in caso di quota esaurita, errore HTTP o dati incompleti.
  *
  * Nota importante:
- * non c'è un limite massimo lato codice. Se una pubblicazione ha molte migliaia di citazioni,
- * il recupero completo può consumare molte query SerpApi. In caso di errore/quota, il connector
- * restituisce i documenti già raccolti fino a quel momento.
+ * Scholar/SerpApi è una sorgente secondaria e può restituire risultati variabili o parziali.
+ * Per evitare consumi eccessivi di query SerpApi, il recupero dei documenti citanti è limitato
+ * a MAX_SCHOLAR_CITING_DOCUMENTS_PAGES pagine.
  *
  * Nota sicurezza:
  * il connector non stampa mai la SERPAPI_API_KEY nei log. Eventuali response body o messaggi
@@ -52,6 +53,7 @@ public class SerpApiScholarConnector implements ScholarConnector {
     private static final String GOOGLE_SCHOLAR_ENGINE = "google_scholar";
     private static final int SCHOLAR_SEARCH_PAGE_SIZE = 10;
     private static final int SCHOLAR_CITING_DOCUMENTS_PAGE_SIZE = 20;
+    private static final int MAX_SCHOLAR_CITING_DOCUMENTS_PAGES = 3;
 
     private static final Pattern YEAR_PATTERN = Pattern.compile("\\b(19\\d{2}|20\\d{2})\\b");
 
@@ -264,15 +266,17 @@ public class SerpApiScholarConnector implements ScholarConnector {
 
         LinkedHashMap<String, CitingDocument> documentsByKey = new LinkedHashMap<>();
 
-        URI currentUri = buildScholarCitingDocumentsUri(citesId);
+        URI currentUri = buildScholarCitingDocumentsUri(citesId, 0);
         int page = 1;
 
-        while (currentUri != null) {
+        while (currentUri != null && page <= MAX_SCHOLAR_CITING_DOCUMENTS_PAGES) {
             System.out.println("SerpApi Scholar citing documents page request started. "
                     + "citesId="
                     + citesId
                     + ", page="
                     + page
+                    + ", maxPages="
+                    + MAX_SCHOLAR_CITING_DOCUMENTS_PAGES
                     + ", accumulatedBefore="
                     + documentsByKey.size());
 
@@ -306,29 +310,82 @@ public class SerpApiScholarConnector implements ScholarConnector {
                 break;
             }
 
+            int accumulatedBeforePage = documentsByKey.size();
+
             for (JsonNode result : organicResults) {
                 CitingDocument document = mapScholarResultToCitingDocument(result);
                 documentsByKey.putIfAbsent(buildCitingDocumentKey(document), document);
             }
+
+            int addedThisPage = documentsByKey.size() - accumulatedBeforePage;
+
+            String nextUrl = root.path("serpapi_pagination").path("next").asText("");
+            Integer totalResults = extractSearchInformationTotalResults(root);
 
             System.out.println("SerpApi Scholar citing documents page fetched. "
                     + "page="
                     + page
                     + ", pageItems="
                     + organicResults.size()
+                    + ", addedThisPage="
+                    + addedThisPage
                     + ", accumulatedAfter="
-                    + documentsByKey.size());
+                    + documentsByKey.size()
+                    + ", nextPresent="
+                    + hasText(nextUrl)
+                    + ", totalResults="
+                    + safeLogValue(totalResults != null ? totalResults.toString() : null));
 
-            String nextUrl = root.path("serpapi_pagination").path("next").asText("");
-
-            if (nextUrl == null || nextUrl.isBlank()) {
-                System.out.println("SerpApi Scholar citing documents pagination completed. pagesFetched=" + page);
+            if (totalResults != null && documentsByKey.size() >= totalResults) {
+                System.out.println("SerpApi Scholar citing documents pagination stopped. "
+                        + "Reason: reported total results reached. totalResults="
+                        + totalResults
+                        + ", accumulated="
+                        + documentsByKey.size());
                 break;
             }
 
-            currentUri = buildNextPageUri(nextUrl);
+            if (hasText(nextUrl)) {
+                currentUri = buildNextPageUri(nextUrl);
+                page++;
+                continue;
+            }
+
+            if (page >= MAX_SCHOLAR_CITING_DOCUMENTS_PAGES) {
+                System.out.println("SerpApi Scholar citing documents pagination stopped. "
+                        + "Reason: max pages reached. maxPages="
+                        + MAX_SCHOLAR_CITING_DOCUMENTS_PAGES);
+                break;
+            }
+
+            if (addedThisPage <= 0) {
+                System.out.println("SerpApi Scholar citing documents pagination stopped. "
+                        + "Reason: manual pagination would not add new documents.");
+                break;
+            }
+
+            /*
+             * Fallback controllato:
+             * se SerpApi non espone serpapi_pagination.next ma la pagina contiene risultati,
+             * proviamo una pagina manuale usando start.
+             *
+             * Limite massimo: MAX_SCHOLAR_CITING_DOCUMENTS_PAGES.
+             */
+            int manualStart = page * SCHOLAR_CITING_DOCUMENTS_PAGE_SIZE;
+
+            System.out.println("SerpApi Scholar citing documents next page missing. "
+                    + "Trying manual pagination with start="
+                    + manualStart);
+
+            currentUri = buildScholarCitingDocumentsUri(citesId, manualStart);
             page++;
         }
+
+        System.out.println("SerpApi Scholar citing documents pagination completed. "
+                + "pagesLimit="
+                + MAX_SCHOLAR_CITING_DOCUMENTS_PAGES
+                + ", accumulated="
+                + documentsByKey.size());
 
         return new ArrayList<>(documentsByKey.values());
     }
@@ -374,19 +431,27 @@ public class SerpApiScholarConnector implements ScholarConnector {
         return URI.create(url);
     }
 
-    private URI buildScholarCitingDocumentsUri(String citesId) {
-        String url = settings.baseUrl()
-                + "?engine="
-                + GOOGLE_SCHOLAR_ENGINE
-                + "&cites="
-                + encode(citesId)
-                + "&hl=en"
-                + "&num="
-                + SCHOLAR_CITING_DOCUMENTS_PAGE_SIZE
-                + "&api_key="
-                + encode(settings.apiKey());
+    private URI buildScholarCitingDocumentsUri(String citesId, int start) {
+        StringBuilder urlBuilder = new StringBuilder();
 
-        return URI.create(url);
+        urlBuilder.append(settings.baseUrl())
+                .append("?engine=")
+                .append(GOOGLE_SCHOLAR_ENGINE)
+                .append("&cites=")
+                .append(encode(citesId))
+                .append("&hl=en")
+                .append("&num=")
+                .append(SCHOLAR_CITING_DOCUMENTS_PAGE_SIZE)
+                .append("&filter=0");
+
+        if (start > 0) {
+            urlBuilder.append("&start=").append(start);
+        }
+
+        urlBuilder.append("&api_key=")
+                .append(encode(settings.apiKey()));
+
+        return URI.create(urlBuilder.toString());
     }
 
     private URI buildNextPageUri(String nextUrl) {
@@ -630,6 +695,34 @@ public class SerpApiScholarConnector implements ScholarConnector {
                 .trim();
     }
 
+    private Integer extractSearchInformationTotalResults(JsonNode root) {
+        if (root == null) {
+            return null;
+        }
+
+        JsonNode totalResultsNode = root.path("search_information").path("total_results");
+
+        if (totalResultsNode.isMissingNode() || totalResultsNode.isNull()) {
+            return null;
+        }
+
+        if (totalResultsNode.isInt() || totalResultsNode.isLong()) {
+            return totalResultsNode.asInt();
+        }
+
+        String rawValue = totalResultsNode.asText("");
+
+        if (!hasText(rawValue)) {
+            return null;
+        }
+
+        try {
+            return Integer.parseInt(rawValue.replace(",", "").trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
     private void logNonSuccessResponse(String operation, int statusCode, String responseBody) {
         String preview = abbreviate(sanitizeForLog(responseBody), 500);
 
@@ -665,7 +758,11 @@ public class SerpApiScholarConnector implements ScholarConnector {
     }
 
     private String safeLogValue(String value) {
-        return value != null && !value.isBlank() ? value : "N/D";
+        return hasText(value) ? value : "N/D";
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.trim().isBlank();
     }
 
     private String sanitizeForLog(String value) {

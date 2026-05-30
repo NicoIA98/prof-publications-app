@@ -19,5 +19,4 @@ public interface CitationCacheRepository {
 
     void saveCitationData(Publication publication, CitationSummary summary, List<CitingDocument> citingDocuments);
 
-    Optional<String> findLastRefreshAt(Publication publication);
 }

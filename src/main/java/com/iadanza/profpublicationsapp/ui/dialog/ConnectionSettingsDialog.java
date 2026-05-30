@@ -4,7 +4,6 @@ import com.iadanza.profpublicationsapp.infrastructure.config.ConnectionSettings;
 import com.iadanza.profpublicationsapp.infrastructure.config.LocalSettingsRepository;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
-import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.Dialog;
@@ -12,7 +11,6 @@ import javafx.scene.control.Label;
 import javafx.scene.control.PasswordField;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
-import javafx.scene.image.Image;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.GridPane;
@@ -21,10 +19,8 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
-import javafx.stage.Stage;
 
 import java.io.IOException;
-import java.net.URL;
 import java.util.function.Consumer;
 
 /**
@@ -57,8 +53,8 @@ public class ConnectionSettingsDialog {
         Dialog<Void> dialog = new Dialog<>();
         dialog.setTitle("Impostazioni API key");
         dialog.setResizable(true);
-        applyDialogIcon(dialog);
-        applyDialogStylesheet(dialog);
+        DialogSupport.applyDialogIcon(dialog);
+        DialogSupport.applyDialogStylesheet(dialog);
 
         /*
          * ButtonType tecnico nascosto.
@@ -260,7 +256,7 @@ public class ConnectionSettingsDialog {
             );
 
             if (validationError != null) {
-                showErrorAlert("Impostazioni non valide", validationError);
+                DialogSupport.showErrorAlert("Impostazioni non valide", validationError);
                 return;
             }
 
@@ -280,7 +276,7 @@ public class ConnectionSettingsDialog {
                         "Impostazioni salvate. Riavvia l'applicazione per applicare le nuove API key."
                 );
 
-                showInfoAlert(
+                DialogSupport.showInfoAlert(
                         "Impostazioni salvate",
                         "Le impostazioni sono state salvate correttamente.\n\n"
                                 + "File locale:\n"
@@ -290,7 +286,7 @@ public class ConnectionSettingsDialog {
 
                 dialog.close();
             } catch (IOException e) {
-                showErrorAlert(
+                DialogSupport.showErrorAlert(
                         "Errore salvataggio impostazioni",
                         "Non è stato possibile salvare il file settings.properties."
                 );
@@ -339,8 +335,8 @@ public class ConnectionSettingsDialog {
         dialog.setTitle("Aiuto API key");
         dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
         dialog.setResizable(true);
-        applyDialogIcon(dialog);
-        applyDialogStylesheet(dialog);
+        DialogSupport.applyDialogIcon(dialog);
+        DialogSupport.applyDialogStylesheet(dialog);
 
         TextArea helpArea = new TextArea(buildApiKeyInstructionsText());
         helpArea.setEditable(false);
@@ -381,7 +377,7 @@ public class ConnectionSettingsDialog {
                 4. L'app usa SerpApi per interrogare Google Scholar, senza scraping diretto custom.
                 5. Per la ricerca Scholar viene usato l'engine:
                    google_scholar
-                6. Per le citazioni esportabili può essere usato:
+                6. In una versione futura, per le citazioni esportabili potrà essere usato anche:
                    google_scholar_cite
                    con result_id quando disponibile.
                 7. Nota:
@@ -474,50 +470,5 @@ public class ConnectionSettingsDialog {
 
     private boolean hasText(String value) {
         return value != null && !value.trim().isBlank();
-    }
-
-    private void showInfoAlert(String title, String message) {
-        Alert alert = new Alert(Alert.AlertType.INFORMATION);
-        alert.setTitle(title);
-        alert.setHeaderText(null);
-        alert.setContentText(message != null ? message : "");
-        applyDialogIcon(alert);
-        applyDialogStylesheet(alert);
-        alert.showAndWait();
-    }
-
-    private void showErrorAlert(String title, String message) {
-        Alert alert = new Alert(Alert.AlertType.ERROR);
-        alert.setTitle(title);
-        alert.setHeaderText(null);
-        alert.setContentText(message != null ? message : "Errore non specificato.");
-        applyDialogIcon(alert);
-        applyDialogStylesheet(alert);
-        alert.showAndWait();
-    }
-
-    private void applyDialogStylesheet(Dialog<?> dialog) {
-        URL stylesheet = getClass().getResource("/styles/app.css");
-
-        if (stylesheet == null) {
-            System.out.println("Stylesheet dialog non trovato: /styles/app.css");
-            return;
-        }
-
-        dialog.getDialogPane().getStylesheets().add(stylesheet.toExternalForm());
-    }
-
-    private void applyDialogIcon(Dialog<?> dialog) {
-        URL iconUrl = getClass().getResource("/icons/app-icon.png");
-
-        if (iconUrl == null) {
-            System.out.println("Icona dialog non trovata: /icons/app-icon.png");
-            return;
-        }
-
-        dialog.setOnShown(event -> {
-            Stage dialogStage = (Stage) dialog.getDialogPane().getScene().getWindow();
-            dialogStage.getIcons().add(new Image(iconUrl.toExternalForm()));
-        });
     }
 }

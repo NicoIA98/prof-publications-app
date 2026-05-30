@@ -9,12 +9,9 @@ import java.util.List;
 /**
  * DTO della risposta REST IRIS items/search.
  *
- * Nota:
- * alcune installazioni IRIS/CINECA restituiscono il campo con nome:
- * "restResourseDTOList"
- * con "Resourse" scritto in modo non standard.
- *
- * Per sicurezza accettiamo più alias.
+ * Alcune installazioni IRIS/CINECA possono restituire la lista degli item
+ * con nomi leggermente diversi o non standard.
+ * Per questo motivo vengono accettati più alias Jackson.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record IrisItemSearchResponseDto(

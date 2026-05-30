@@ -19,13 +19,7 @@ import java.util.List;
  * - il progetto NON distribuisce codici fiscali reali;
  * - al primo avvio viene creato un CSV locale vuoto;
  * - i dati inseriti dall'utente restano solo sul suo PC;
- * - il file locale è:
- *
- *   C:\Users\<utente>\.prof-publications-app\professors-cf.csv
- *
- * Nota:
- * Il parametro initialResourcePath resta nel costruttore per compatibilità
- * con il codice esistente, ma non viene usato per copiare dati seed.
+ * - il file locale è salvato in user.home/.prof-publications-app/professors-cf.csv.
  */
 public class CsvProfessorLookupRepository implements ProfessorLookupRepository {
 
@@ -34,7 +28,7 @@ public class CsvProfessorLookupRepository implements ProfessorLookupRepository {
     private final Path storageDirectory;
     private final Path storagePath;
 
-    public CsvProfessorLookupRepository(String initialResourcePath) {
+    public CsvProfessorLookupRepository() {
         this.storageDirectory = Path.of(
                 System.getProperty("user.home"),
                 ".prof-publications-app"

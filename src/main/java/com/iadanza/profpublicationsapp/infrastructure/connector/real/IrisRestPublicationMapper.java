@@ -17,10 +17,10 @@ import java.util.Map;
 /**
  * Mapper da item REST IRIS a Publication di dominio.
  *
- * Versione A4-quater:
- * - Venue e DOI restano conservativi
- * - gli autori vengono filtrati in modo più severo
- * - vengono tenuti solo token che assomigliano davvero a nomi di persona
+ * Responsabilità:
+ * - estrarre titolo, autori, anno, venue, DOI e abstract dai metadati IRIS;
+ * - filtrare valori sporchi o non bibliografici;
+ * - costruire il link alla pubblicazione IRIS quando disponibile.
  */
 public class IrisRestPublicationMapper {
 

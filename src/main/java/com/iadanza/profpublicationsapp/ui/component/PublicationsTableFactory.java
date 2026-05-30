@@ -21,9 +21,10 @@ import java.util.function.Consumer;
  * - notificare la UI principale quando cambia la selezione;
  * - mantenere fuori da ProfessorPublicationsApp la logica di costruzione tabellare.
  *
- * Nota H5:
- * la colonna Venue è stata rimossa dalla tabella per rendere la UI più pulita.
+ * La tabella mostra solo i dati essenziali per la demo:
+ * titolo, anno, esportazione BibTeX e DOI.
  */
+
 public final class PublicationsTableFactory {
 
     private PublicationsTableFactory() {

@@ -6,24 +6,20 @@ import com.iadanza.profpublicationsapp.domain.model.CitingDocument;
 import com.iadanza.profpublicationsapp.domain.model.Publication;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
-import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.Dialog;
 import javafx.scene.control.TextArea;
-import javafx.scene.image.Image;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 import javafx.stage.FileChooser;
-import javafx.stage.Stage;
 import javafx.stage.Window;
 
 import java.io.File;
 import java.io.IOException;
-import java.net.URL;
 import java.nio.file.Files;
 import java.text.Normalizer;
 import java.util.Locale;
@@ -112,8 +108,8 @@ public class BibtexDialog {
             dialog.initOwner(ownerWindow);
         }
 
-        applyDialogIcon(dialog);
-        applyDialogStylesheet(dialog);
+        DialogSupport.applyDialogIcon(dialog);
+        DialogSupport.applyDialogStylesheet(dialog);
 
         TextArea bibtexArea = new TextArea(bibtexEntry.rawBibtex());
         bibtexArea.setEditable(false);
@@ -299,7 +295,10 @@ public class BibtexDialog {
             statusConsumer.accept("BibTeX salvato in: " + selectedFile.getAbsolutePath());
         } catch (IOException e) {
             statusConsumer.accept("Errore durante il salvataggio del file BibTeX.");
-            showErrorAlert("Errore salvataggio file", "Impossibile salvare il file .bib selezionato.");
+            DialogSupport.showErrorAlert(
+                    "Errore salvataggio file",
+                    "Impossibile salvare il file .bib selezionato."
+            );
         }
     }
 
@@ -327,40 +326,5 @@ public class BibtexDialog {
 
     private boolean hasText(String value) {
         return value != null && !value.trim().isBlank();
-    }
-
-    private void showErrorAlert(String title, String message) {
-        Alert alert = new Alert(Alert.AlertType.ERROR);
-        alert.setTitle(title);
-        alert.setHeaderText(null);
-        alert.setContentText(message != null ? message : "Errore non specificato.");
-        applyDialogIcon(alert);
-        applyDialogStylesheet(alert);
-        alert.showAndWait();
-    }
-
-    private void applyDialogStylesheet(Dialog<?> dialog) {
-        URL stylesheet = getClass().getResource("/styles/app.css");
-
-        if (stylesheet == null) {
-            System.out.println("Stylesheet dialog non trovato: /styles/app.css");
-            return;
-        }
-
-        dialog.getDialogPane().getStylesheets().add(stylesheet.toExternalForm());
-    }
-
-    private void applyDialogIcon(Dialog<?> dialog) {
-        URL iconUrl = getClass().getResource("/icons/app-icon.png");
-
-        if (iconUrl == null) {
-            System.out.println("Icona dialog non trovata: /icons/app-icon.png");
-            return;
-        }
-
-        dialog.setOnShown(event -> {
-            Stage dialogStage = (Stage) dialog.getDialogPane().getScene().getWindow();
-            dialogStage.getIcons().add(new Image(iconUrl.toExternalForm()));
-        });
     }
 }

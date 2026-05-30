@@ -10,7 +10,6 @@ import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
-import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.Dialog;
@@ -20,13 +19,10 @@ import javafx.scene.control.TableCell;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
 import javafx.scene.control.TextField;
-import javafx.scene.image.Image;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
-import javafx.stage.Stage;
 
-import java.net.URL;
 import java.util.Comparator;
 import java.util.List;
 import java.util.function.Consumer;
@@ -73,8 +69,9 @@ public class CitingDocumentsDialog {
         dialog.setTitle("Documenti citanti " + sourceDisplayName(sourceType));
         dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
         dialog.setResizable(true);
-        applyDialogIcon(dialog);
-        applyDialogStylesheet(dialog);
+
+        DialogSupport.applyDialogIcon(dialog);
+        DialogSupport.applyDialogStylesheet(dialog);
 
         Label infoLabel = new Label(
                 "Pubblicazione selezionata: "
@@ -339,7 +336,7 @@ public class CitingDocumentsDialog {
 
         if (hostServices == null) {
             statusConsumer.accept("Servizio apertura browser non disponibile.");
-            showErrorAlert(
+            DialogSupport.showErrorAlert(
                     "Errore apertura URL",
                     "Non è stato possibile aprire il link:\n" + url
             );
@@ -351,7 +348,7 @@ public class CitingDocumentsDialog {
             statusConsumer.accept("URL documento citante aperto nel browser.");
         } catch (Exception e) {
             statusConsumer.accept("Impossibile aprire l'URL del documento citante.");
-            showErrorAlert(
+            DialogSupport.showErrorAlert(
                     "Errore apertura URL",
                     "Non è stato possibile aprire il link:\n" + url
             );
@@ -382,40 +379,5 @@ public class CitingDocumentsDialog {
 
     private boolean hasText(String value) {
         return value != null && !value.trim().isBlank();
-    }
-
-    private void showErrorAlert(String title, String message) {
-        Alert alert = new Alert(Alert.AlertType.ERROR);
-        alert.setTitle(title);
-        alert.setHeaderText(null);
-        alert.setContentText(message != null ? message : "Errore non specificato.");
-        applyDialogIcon(alert);
-        applyDialogStylesheet(alert);
-        alert.showAndWait();
-    }
-
-    private void applyDialogStylesheet(Dialog<?> dialog) {
-        URL stylesheet = getClass().getResource("/styles/app.css");
-
-        if (stylesheet == null) {
-            System.out.println("Stylesheet dialog non trovato: /styles/app.css");
-            return;
-        }
-
-        dialog.getDialogPane().getStylesheets().add(stylesheet.toExternalForm());
-    }
-
-    private void applyDialogIcon(Dialog<?> dialog) {
-        URL iconUrl = getClass().getResource("/icons/app-icon.png");
-
-        if (iconUrl == null) {
-            System.out.println("Icona dialog non trovata: /icons/app-icon.png");
-            return;
-        }
-
-        dialog.setOnShown(event -> {
-            Stage dialogStage = (Stage) dialog.getDialogPane().getScene().getWindow();
-            dialogStage.getIcons().add(new Image(iconUrl.toExternalForm()));
-        });
     }
 }

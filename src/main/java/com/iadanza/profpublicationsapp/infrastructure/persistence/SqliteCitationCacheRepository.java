@@ -142,32 +142,6 @@ public class SqliteCitationCacheRepository implements CitationCacheRepository {
         }
     }
 
-    @Override
-    public Optional<String> findLastRefreshAt(Publication publication) {
-        String sql = """
-                SELECT last_refresh_at
-                FROM publication_citation_cache
-                WHERE publication_key = ?
-                """;
-
-        try (Connection connection = getConnection();
-             PreparedStatement statement = connection.prepareStatement(sql)) {
-
-            statement.setString(1, buildPublicationKey(publication));
-
-            try (ResultSet resultSet = statement.executeQuery()) {
-                if (!resultSet.next()) {
-                    return Optional.empty();
-                }
-
-                return Optional.ofNullable(resultSet.getString("last_refresh_at"));
-            }
-
-        } catch (SQLException e) {
-            throw new RuntimeException("Errore durante la lettura del timestamp citazionale da SQLite", e);
-        }
-    }
-
     private void initializeDatabase() {
         String sql = """
                 CREATE TABLE IF NOT EXISTS publication_citation_cache (

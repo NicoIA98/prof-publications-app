@@ -24,14 +24,11 @@ import javafx.scene.control.TableRow;
 import javafx.scene.control.TableView;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
-import javafx.scene.image.Image;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
-import javafx.stage.Stage;
 
 import java.io.IOException;
-import java.net.URL;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
@@ -70,8 +67,9 @@ public class ProfessorLookupDialog {
         dialog.setTitle("Rubrica CF");
         dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
         dialog.setResizable(true);
-        applyDialogIcon(dialog);
-        applyDialogStylesheet(dialog);
+
+        DialogSupport.applyDialogIcon(dialog);
+        DialogSupport.applyDialogStylesheet(dialog);
 
         Label infoLabel = new Label(
                 "Rubrica locale personale. I dati inseriti restano salvati solo su questo PC. "
@@ -177,7 +175,7 @@ public class ProfessorLookupDialog {
                             + editedEntry.get().cognome()
                             + ".");
                 } catch (IOException | IllegalArgumentException e) {
-                    showErrorAlert("Errore modifica docente", e.getMessage());
+                    DialogSupport.showErrorAlert("Errore modifica docente", e.getMessage());
                 }
             });
 
@@ -206,7 +204,7 @@ public class ProfessorLookupDialog {
                             + selectedEntry.cognome()
                             + ".");
                 } catch (IOException | IllegalArgumentException e) {
-                    showErrorAlert("Errore eliminazione docente", e.getMessage());
+                    DialogSupport.showErrorAlert("Errore eliminazione docente", e.getMessage());
                 }
             });
 
@@ -249,7 +247,7 @@ public class ProfessorLookupDialog {
                         + newEntry.get().cognome()
                         + ".");
             } catch (IOException | IllegalArgumentException e) {
-                showErrorAlert("Errore aggiunta docente", e.getMessage());
+                DialogSupport.showErrorAlert("Errore aggiunta docente", e.getMessage());
             }
         });
 
@@ -269,8 +267,9 @@ public class ProfessorLookupDialog {
         dialog.setTitle("Aiuto Rubrica CF");
         dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
         dialog.setResizable(true);
-        applyDialogIcon(dialog);
-        applyDialogStylesheet(dialog);
+
+        DialogSupport.applyDialogIcon(dialog);
+        DialogSupport.applyDialogStylesheet(dialog);
 
         TextArea helpArea = new TextArea();
         helpArea.setEditable(false);
@@ -334,8 +333,8 @@ public class ProfessorLookupDialog {
                         + entry.codiceFiscale()
         );
 
-        applyDialogIcon(alert);
-        applyDialogStylesheet(alert);
+        DialogSupport.applyDialogIcon(alert);
+        DialogSupport.applyDialogStylesheet(alert);
 
         Optional<ButtonType> result = alert.showAndWait();
 
@@ -349,8 +348,9 @@ public class ProfessorLookupDialog {
         Dialog<ProfessorLookupEntry> dialog = new Dialog<>();
         dialog.setTitle(title);
         dialog.setResizable(true);
-        applyDialogIcon(dialog);
-        applyDialogStylesheet(dialog);
+
+        DialogSupport.applyDialogIcon(dialog);
+        DialogSupport.applyDialogStylesheet(dialog);
 
         ButtonType saveButtonType = new ButtonType("Salva", ButtonBar.ButtonData.OK_DONE);
         dialog.getDialogPane().getButtonTypes().addAll(saveButtonType, ButtonType.CANCEL);
@@ -406,7 +406,7 @@ public class ProfessorLookupDialog {
             );
 
             if (validationError != null) {
-                showErrorAlert("Dati non validi", validationError);
+                DialogSupport.showErrorAlert("Dati non validi", validationError);
                 event.consume();
             }
         });
@@ -465,40 +465,5 @@ public class ProfessorLookupDialog {
                         .filter(entry -> entry.matches(normalizedQuery))
                         .toList()
         );
-    }
-
-    private void showErrorAlert(String title, String message) {
-        Alert alert = new Alert(Alert.AlertType.ERROR);
-        alert.setTitle(title);
-        alert.setHeaderText(null);
-        alert.setContentText(message != null ? message : "Errore non specificato.");
-        applyDialogIcon(alert);
-        applyDialogStylesheet(alert);
-        alert.showAndWait();
-    }
-
-    private void applyDialogStylesheet(Dialog<?> dialog) {
-        URL stylesheet = getClass().getResource("/styles/app.css");
-
-        if (stylesheet == null) {
-            System.out.println("Stylesheet dialog non trovato: /styles/app.css");
-            return;
-        }
-
-        dialog.getDialogPane().getStylesheets().add(stylesheet.toExternalForm());
-    }
-
-    private void applyDialogIcon(Dialog<?> dialog) {
-        URL iconUrl = getClass().getResource("/icons/app-icon.png");
-
-        if (iconUrl == null) {
-            System.out.println("Icona dialog non trovata: /icons/app-icon.png");
-            return;
-        }
-
-        dialog.setOnShown(event -> {
-            Stage dialogStage = (Stage) dialog.getDialogPane().getScene().getWindow();
-            dialogStage.getIcons().add(new Image(iconUrl.toExternalForm()));
-        });
     }
 }

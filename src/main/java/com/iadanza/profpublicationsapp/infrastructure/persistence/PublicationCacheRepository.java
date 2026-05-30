@@ -4,7 +4,6 @@ import com.iadanza.profpublicationsapp.domain.model.Professor;
 import com.iadanza.profpublicationsapp.domain.model.Publication;
 
 import java.util.List;
-import java.util.Optional;
 
 /**
  * Repository per la cache locale persistente delle pubblicazioni del professore.
@@ -15,5 +14,4 @@ public interface PublicationCacheRepository {
 
     void savePublications(Professor professor, List<Publication> publications);
 
-    Optional<String> findLastRefreshAt(Professor professor);
 }

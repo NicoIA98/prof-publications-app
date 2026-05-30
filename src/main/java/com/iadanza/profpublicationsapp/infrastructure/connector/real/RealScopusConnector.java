@@ -23,13 +23,14 @@ import java.util.Optional;
 /**
  * Connettore reale minimale per Scopus / Elsevier.
  *
- * Fase E2:
- * - recupera il numero di citazioni Scopus a partire dal DOI.
- *
- * Fase #229-B:
- * - conserva l'EID Scopus restituito dalla Search API;
- * - aggiunge una nota PARTIAL_DATA quando il citation count è disponibile
- *   ma l'elenco dei documenti citanti non è accessibile con le autorizzazioni API attuali.
+ * Responsabilità:
+ * - recuperare il numero di citazioni Scopus a partire dal DOI;
+ * - conservare l'EID Scopus restituito dalla Search API;
+ * - segnalare PARTIAL_DATA quando il citation count è disponibile
+ *   ma l'elenco dei documenti citanti non è accessibile con le autorizzazioni API correnti.
+ * Nota:
+ * il recupero dei documenti citanti Scopus tramite REFEID può dipendere
+ * da permessi API, institutional token o rete/VPN dell'Ateneo.
  */
 public class RealScopusConnector implements ScopusConnector {
 

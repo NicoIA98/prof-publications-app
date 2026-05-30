@@ -11,9 +11,6 @@ import com.iadanza.profpublicationsapp.domain.model.Publication;
 import com.iadanza.profpublicationsapp.infrastructure.config.IrisRestAuthSettings;
 import com.iadanza.profpublicationsapp.infrastructure.config.IrisRuntimeSettings;
 import com.iadanza.profpublicationsapp.infrastructure.connector.IrisConnector;
-import com.iadanza.profpublicationsapp.infrastructure.connector.real.diagnostic.AuthenticatedRestCallResult;
-import com.iadanza.profpublicationsapp.infrastructure.connector.real.diagnostic.IrisCapabilityProbe;
-import com.iadanza.profpublicationsapp.infrastructure.connector.real.diagnostic.IrisProbeResult;
 import com.iadanza.profpublicationsapp.infrastructure.connector.real.dto.IrisItemDto;
 import com.iadanza.profpublicationsapp.infrastructure.connector.real.dto.IrisItemSearchResponseDto;
 import com.iadanza.profpublicationsapp.infrastructure.connector.real.dto.IrisPersonRestDto;
@@ -35,17 +32,17 @@ import java.util.Optional;
 /**
  * Connettore IRIS reale.
  *
- * B2-bis:
- * - recupera tutte le pagine da items/search;
- * - gestisce il limite reale imposto dal server IRIS/CINECA;
- * - se il server restituisce 51 record anche quando chiediamo 100, continua con offset 51, 102, ecc.;
- * - usa count, offset e numero reale di item restituiti;
- * - mantiene log diagnostici per verificare il numero di record recuperati.
+ * Responsabilità:
+ * - cercare un professore tramite identificativi reali supportati;
+ * - recuperare le pubblicazioni IRIS tramite items/search autenticato;
+ * - gestire la paginazione reale imposta dal server IRIS/CINECA;
+ * - mappare i record IRIS verso il dominio applicativo;
+ * - degradare senza crash se le credenziali non sono configurate o una chiamata fallisce.
  *
  * Nota sicurezza:
  * - non stampa password IRIS o token Basic;
  * - non stampa body JSON autenticati contenenti dati anagrafici o metadati IRIS;
- * - mantiene visibile solo il body preview degli endpoint /echo, perché non contiene dati sensibili.
+ * - il connettore contiene solo logica applicativa reale per IRIS.
  */
 public class RealIrisConnector implements IrisConnector {
 
@@ -53,8 +50,6 @@ public class RealIrisConnector implements IrisConnector {
     private static final int MAX_ITEMS_PAGES = 50;
 
     private final HttpClient httpClient;
-    private final IrisRuntimeSettings settings;
-    private final IrisProbeResult probeResult;
     private final IrisRestAuthSettings authSettings;
     private final ObjectMapper objectMapper;
     private final IrisRestPublicationMapper publicationMapper;
@@ -69,9 +64,7 @@ public class RealIrisConnector implements IrisConnector {
             IrisRestAuthSettings authSettings
     ) {
         this.httpClient = httpClient;
-        this.settings = settings;
         this.authSettings = authSettings;
-        this.probeResult = new IrisCapabilityProbe(httpClient, settings).detectCapabilities();
         this.objectMapper = new ObjectMapper()
                 .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
         this.publicationMapper = new IrisRestPublicationMapper(
@@ -79,50 +72,8 @@ public class RealIrisConnector implements IrisConnector {
         );
     }
 
-    public IrisProbeResult getProbeResult() {
-        return probeResult;
-    }
-
     public boolean hasAuthenticatedRestConfiguration() {
         return authSettings != null && authSettings.isConfigured();
-    }
-
-    public AuthenticatedRestCallResult probeAuthenticatedIrEcho() {
-        return sendAuthenticatedGet(buildIrUrl("echo"), "GET", "/rest/api/v1/echo");
-    }
-
-    public AuthenticatedRestCallResult probeAuthenticatedRmEcho() {
-        return sendAuthenticatedGet(buildRmUrl("echo"), "GET", "/rm/restservices/api/v1/echo");
-    }
-
-    public AuthenticatedRestCallResult probeAuthenticatedPersonByCrisId(String crisId) {
-        return sendAuthenticatedGet(
-                buildRmUrl("personsbyrpid/" + crisId),
-                "GET",
-                "/rm/restservices/api/v1/personsbyrpid/" + crisId
-        );
-    }
-
-    public AuthenticatedRestCallResult probeAuthenticatedItemsByContextUser(String crisId) {
-        String jsonBody = buildItemsSearchBody(crisId, null, 0, 20);
-
-        return sendAuthenticatedPostJson(
-                buildIrUrl("items/search"),
-                "POST",
-                "/rest/api/v1/items/search",
-                jsonBody
-        );
-    }
-
-    public AuthenticatedRestCallResult probeAuthenticatedItemsByContextUserAndYear(String crisId, String year) {
-        String jsonBody = buildItemsSearchBody(crisId, year, 0, 20);
-
-        return sendAuthenticatedPostJson(
-                buildIrUrl("items/search"),
-                "POST",
-                "/rest/api/v1/items/search",
-                jsonBody
-        );
     }
 
     @Override
@@ -247,6 +198,10 @@ public class RealIrisConnector implements IrisConnector {
 
     @Override
     public List<Publication> fetchProfessorPublications(Professor professor) {
+        if (professor == null || professor.externalIdentifiers() == null) {
+            return List.of();
+        }
+
         Optional<String> crisId = professor.externalIdentifiers().stream()
                 .filter(identifier -> identifier.type() == IdentifierType.IRIS_ID)
                 .map(ExternalIdentifier::value)
@@ -506,47 +461,6 @@ public class RealIrisConnector implements IrisConnector {
                 """.formatted(crisId, year, offset, limit);
     }
 
-    private AuthenticatedRestCallResult sendAuthenticatedGet(String url, String method, String path) {
-        if (!hasAuthenticatedRestConfiguration()) {
-            return new AuthenticatedRestCallResult(
-                    method,
-                    path,
-                    -1,
-                    null,
-                    "",
-                    "Credenziali REST non configurate"
-            );
-        }
-
-        try {
-            HttpResponse<String> response = sendAuthenticatedGetResponse(url);
-            return toResult(method, path, response);
-
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return new AuthenticatedRestCallResult(
-                    method,
-                    path,
-                    -1,
-                    null,
-                    "",
-                    "Chiamata interrotta"
-            );
-        } catch (IOException | IllegalArgumentException e) {
-            return new AuthenticatedRestCallResult(
-                    method,
-                    path,
-                    -1,
-                    null,
-                    "",
-                    "Errore chiamata autenticata: "
-                            + e.getClass().getSimpleName()
-                            + " - "
-                            + sanitizeForLog(e.getMessage())
-            );
-        }
-    }
-
     private HttpResponse<String> sendAuthenticatedGetResponse(String url) throws IOException, InterruptedException {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(url))
@@ -557,91 +471,6 @@ public class RealIrisConnector implements IrisConnector {
                 .build();
 
         return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-    }
-
-    private AuthenticatedRestCallResult sendAuthenticatedPostJson(
-            String url,
-            String method,
-            String path,
-            String jsonBody
-    ) {
-        if (!hasAuthenticatedRestConfiguration()) {
-            return new AuthenticatedRestCallResult(
-                    method,
-                    path,
-                    -1,
-                    null,
-                    "",
-                    "Credenziali REST non configurate"
-            );
-        }
-
-        try {
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(url))
-                    .timeout(java.time.Duration.ofSeconds(authSettings.timeoutSeconds()))
-                    .header("Accept", "application/json, text/plain, */*")
-                    .header("Content-Type", "application/json")
-                    .header("Authorization", buildBasicAuthHeader())
-                    .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
-                    .build();
-
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-            return toResult(method, path, response);
-
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return new AuthenticatedRestCallResult(
-                    method,
-                    path,
-                    -1,
-                    null,
-                    "",
-                    "Chiamata interrotta"
-            );
-        } catch (IOException | IllegalArgumentException e) {
-            return new AuthenticatedRestCallResult(
-                    method,
-                    path,
-                    -1,
-                    null,
-                    "",
-                    "Errore chiamata autenticata: "
-                            + e.getClass().getSimpleName()
-                            + " - "
-                            + sanitizeForLog(e.getMessage())
-            );
-        }
-    }
-
-    private AuthenticatedRestCallResult toResult(String method, String path, HttpResponse<String> response) {
-        String body = response.body() != null ? response.body() : "";
-        String preview = buildAuthenticatedBodyPreview(path, body);
-        String contentType = response.headers().firstValue("Content-Type").orElse(null);
-
-        String notes;
-        if (response.statusCode() == 200) {
-            notes = "Chiamata autenticata riuscita";
-        } else if (response.statusCode() == 401) {
-            notes = "Credenziali non valide o token Basic non accettato";
-        } else if (response.statusCode() == 403) {
-            notes = "Credenziali valide ma accesso negato";
-        } else if (response.statusCode() == 404) {
-            notes = "Endpoint non trovato";
-        } else if (response.statusCode() == 400) {
-            notes = "Richiesta accettata dal server ma payload/parametri non corretti";
-        } else {
-            notes = "Risposta ricevuta";
-        }
-
-        return new AuthenticatedRestCallResult(
-                method,
-                path,
-                response.statusCode(),
-                contentType,
-                preview,
-                notes
-        );
     }
 
     private String buildBasicAuthHeader() {
@@ -688,20 +517,6 @@ public class RealIrisConnector implements IrisConnector {
         String first = firstName != null ? firstName.trim() : "";
         String last = lastName != null ? lastName.trim() : "";
         return (first + " " + last).trim();
-    }
-
-    private String buildAuthenticatedBodyPreview(String path, String body) {
-        if (path == null || path.isBlank()) {
-            return "[omesso: risposta autenticata IRIS non stampata nei log]";
-        }
-
-        String normalizedPath = path.toLowerCase();
-
-        if (normalizedPath.endsWith("/echo")) {
-            return preview(sanitizeForLog(body), 300);
-        }
-
-        return "[omesso: risposta autenticata IRIS non stampata nei log]";
     }
 
     private String sanitizeForLog(String value) {

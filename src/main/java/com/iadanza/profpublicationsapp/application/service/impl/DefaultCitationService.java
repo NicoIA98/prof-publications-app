@@ -1,7 +1,6 @@
 package com.iadanza.profpublicationsapp.application.service.impl;
 
 import com.iadanza.profpublicationsapp.application.service.CitationService;
-import com.iadanza.profpublicationsapp.domain.enums.SourceType;
 import com.iadanza.profpublicationsapp.domain.model.CitationSummary;
 import com.iadanza.profpublicationsapp.domain.model.CitingDocument;
 import com.iadanza.profpublicationsapp.domain.model.Publication;
@@ -15,13 +14,18 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Implementazione base del servizio citazionale.
- * In questa fase usa una cache persistente su SQLite.
+ * Implementazione del servizio citazionale.
  *
- * #229-B:
- * - conserva l'EID Scopus restituito dal RealScopusConnector;
- * - conserva la nota PARTIAL_DATA sui documenti citanti Scopus non disponibili;
- * - mantiene compatibile il merge Scopus + Scholar.
+ * Responsabilità:
+ * - leggere citation summary e documenti citanti dalla cache SQLite;
+ * - aggiornare il citation summary interrogando Scopus e Scholar;
+ * - aggiornare i documenti citanti interrogando Scopus e Scholar;
+ * - fondere i risultati delle sorgenti evitando duplicati;
+ * - proteggere la cache da refresh peggiorativi/parziali delle sorgenti esterne.
+ *
+ * Nota:
+ * Scopus è la sorgente bibliografica/citazionale ufficiale.
+ * Scholar tramite SerpApi è una sorgente secondaria e può restituire dati parziali o variabili.
  */
 public class DefaultCitationService implements CitationService {
 
@@ -84,102 +88,35 @@ public class DefaultCitationService implements CitationService {
         );
 
         List<CitingDocument> existingDocuments = getCachedCitingDocuments(publication);
-
         citationCacheRepository.saveCitationData(publication, merged, existingDocuments);
+
         return merged;
     }
 
     @Override
     public List<CitingDocument> refreshCitingDocuments(Publication publication) {
+        List<CitingDocument> existingDocuments = getCachedCitingDocuments(publication);
+
         List<CitingDocument> scopusDocs = scopusConnector.findCitingDocuments(publication);
         List<CitingDocument> scholarDocs = scholarConnector.findCitingDocuments(publication);
 
-        List<CitingDocument> merged = mergeAndDeduplicateDocuments(scopusDocs, scholarDocs);
+        List<CitingDocument> refreshedDocuments = mergeAndDeduplicateDocuments(scopusDocs, scholarDocs);
+
+        /*
+         * Importante:
+         * non sostituiamo più la cache con il solo risultato dell'ultimo refresh.
+         * Scholar/SerpApi può restituire meno documenti in alcuni momenti.
+         * Manteniamo quindi i documenti già raccolti e aggiungiamo quelli nuovi.
+         */
+        List<CitingDocument> mergedWithCache = mergeAndDeduplicateDocuments(
+                existingDocuments,
+                refreshedDocuments
+        );
+
         CitationSummary existingSummary = getCachedCitationSummary(publication);
+        citationCacheRepository.saveCitationData(publication, existingSummary, mergedWithCache);
 
-        citationCacheRepository.saveCitationData(publication, existingSummary, merged);
-        return merged;
-    }
-
-    public CitationSummary refreshScopusCitationSummary(Publication publication) {
-        CitationSummary existing = getCachedCitationSummary(publication);
-        CitationSummary scopusSummary = scopusConnector.fetchCitationSummary(publication).orElse(null);
-
-        Integer scopusCount = scopusSummary != null
-                ? scopusSummary.scopusCitationCount()
-                : existing.scopusCitationCount();
-
-        Integer scholarCount = existing.scholarCitationCount();
-        Integer total = computeTotal(scopusCount, scholarCount);
-
-        String scopusEid = scopusSummary != null
-                ? scopusSummary.scopusEid()
-                : existing.scopusEid();
-
-        String scopusCitingDocumentsNote = scopusSummary != null
-                ? scopusSummary.scopusCitingDocumentsNote()
-                : existing.scopusCitingDocumentsNote();
-
-        CitationSummary updated = new CitationSummary(
-                scopusCount,
-                scholarCount,
-                total,
-                scopusEid,
-                scopusCitingDocumentsNote
-        );
-
-        citationCacheRepository.saveCitationData(publication, updated, getCachedCitingDocuments(publication));
-        return updated;
-    }
-
-    public CitationSummary refreshScholarCitationSummary(Publication publication) {
-        CitationSummary existing = getCachedCitationSummary(publication);
-        CitationSummary scholarSummary = scholarConnector.fetchCitationSummary(publication).orElse(null);
-
-        Integer scopusCount = existing.scopusCitationCount();
-
-        Integer scholarCount = scholarSummary != null
-                ? scholarSummary.scholarCitationCount()
-                : existing.scholarCitationCount();
-
-        Integer total = computeTotal(scopusCount, scholarCount);
-
-        CitationSummary updated = new CitationSummary(
-                scopusCount,
-                scholarCount,
-                total,
-                existing.scopusEid(),
-                existing.scopusCitingDocumentsNote()
-        );
-
-        citationCacheRepository.saveCitationData(publication, updated, getCachedCitingDocuments(publication));
-        return updated;
-    }
-
-    public List<CitingDocument> refreshScopusCitingDocuments(Publication publication) {
-        List<CitingDocument> existing = getCachedCitingDocuments(publication);
-        List<CitingDocument> preserved = existing.stream()
-                .filter(document -> document.sourceType() != SourceType.SCOPUS)
-                .toList();
-
-        List<CitingDocument> refreshed = scopusConnector.findCitingDocuments(publication);
-        List<CitingDocument> merged = mergeAndDeduplicateDocuments(preserved, refreshed);
-
-        citationCacheRepository.saveCitationData(publication, getCachedCitationSummary(publication), merged);
-        return merged;
-    }
-
-    public List<CitingDocument> refreshScholarCitingDocuments(Publication publication) {
-        List<CitingDocument> existing = getCachedCitingDocuments(publication);
-        List<CitingDocument> preserved = existing.stream()
-                .filter(document -> document.sourceType() != SourceType.SCHOLAR)
-                .toList();
-
-        List<CitingDocument> refreshed = scholarConnector.findCitingDocuments(publication);
-        List<CitingDocument> merged = mergeAndDeduplicateDocuments(preserved, refreshed);
-
-        citationCacheRepository.saveCitationData(publication, getCachedCitationSummary(publication), merged);
-        return merged;
+        return mergedWithCache;
     }
 
     private Integer computeTotal(Integer scopusCount, Integer scholarCount) {
@@ -191,18 +128,33 @@ public class DefaultCitationService implements CitationService {
                 + (scholarCount != null ? scholarCount : 0);
     }
 
-    private List<CitingDocument> mergeAndDeduplicateDocuments(List<CitingDocument> first, List<CitingDocument> second) {
+    private List<CitingDocument> mergeAndDeduplicateDocuments(
+            List<CitingDocument> first,
+            List<CitingDocument> second
+    ) {
         Map<String, CitingDocument> merged = new LinkedHashMap<>();
 
-        for (CitingDocument document : first) {
-            merged.put(buildCitingDocumentKey(document), document);
-        }
-
-        for (CitingDocument document : second) {
-            merged.put(buildCitingDocumentKey(document), document);
-        }
+        addDocumentsToMap(merged, first);
+        addDocumentsToMap(merged, second);
 
         return new ArrayList<>(merged.values());
+    }
+
+    private void addDocumentsToMap(
+            Map<String, CitingDocument> target,
+            List<CitingDocument> documents
+    ) {
+        if (documents == null || documents.isEmpty()) {
+            return;
+        }
+
+        for (CitingDocument document : documents) {
+            if (document == null) {
+                continue;
+            }
+
+            target.put(buildCitingDocumentKey(document), document);
+        }
     }
 
     private String buildCitingDocumentKey(CitingDocument document) {

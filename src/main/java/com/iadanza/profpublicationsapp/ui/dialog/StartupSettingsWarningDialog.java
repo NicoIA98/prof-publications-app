@@ -7,11 +7,8 @@ import javafx.scene.control.ButtonType;
 import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextArea;
-import javafx.scene.image.Image;
 import javafx.scene.layout.VBox;
-import javafx.stage.Stage;
 
-import java.net.URL;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -50,8 +47,9 @@ public class StartupSettingsWarningDialog {
         Dialog<ButtonType> dialog = new Dialog<>();
         dialog.setTitle("Configurazione iniziale richiesta");
         dialog.setResizable(true);
-        applyDialogIcon(dialog);
-        applyDialogStylesheet(dialog);
+
+        DialogSupport.applyDialogIcon(dialog);
+        DialogSupport.applyDialogStylesheet(dialog);
 
         ButtonType openSettingsButtonType = new ButtonType(
                 "Apri impostazioni",
@@ -155,30 +153,5 @@ public class StartupSettingsWarningDialog {
 
     private boolean hasText(String value) {
         return value != null && !value.trim().isBlank();
-    }
-
-    private void applyDialogStylesheet(Dialog<?> dialog) {
-        URL stylesheet = getClass().getResource("/styles/app.css");
-
-        if (stylesheet == null) {
-            System.out.println("Stylesheet dialog non trovato: /styles/app.css");
-            return;
-        }
-
-        dialog.getDialogPane().getStylesheets().add(stylesheet.toExternalForm());
-    }
-
-    private void applyDialogIcon(Dialog<?> dialog) {
-        URL iconUrl = getClass().getResource("/icons/app-icon.png");
-
-        if (iconUrl == null) {
-            System.out.println("Icona dialog non trovata: /icons/app-icon.png");
-            return;
-        }
-
-        dialog.setOnShown(event -> {
-            Stage dialogStage = (Stage) dialog.getDialogPane().getScene().getWindow();
-            dialogStage.getIcons().add(new Image(iconUrl.toExternalForm()));
-        });
     }
 }

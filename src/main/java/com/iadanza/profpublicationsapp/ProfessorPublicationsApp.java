@@ -57,19 +57,16 @@ import java.util.Optional;
 /**
  * Classe principale dell'applicazione JavaFX.
  *
- * Stato attuale:
- * - bootstrap infrastrutturale spostato in AppBootstrap;
- * - servizi applicativi ricevuti tramite AppServices;
- * - gestione settings locali tramite LocalSettingsRepository;
- * - dialog Impostazioni estratta in ui.dialog.ConnectionSettingsDialog;
- * - dialog primo avvio estratta in ui.dialog.StartupSettingsWarningDialog;
- * - dialog Rubrica CF estratta in ui.dialog.ProfessorLookupDialog;
- * - dialog Documenti Citanti estratta in ui.dialog.CitingDocumentsDialog;
- * - dialog BibTeX estratta in ui.dialog.BibtexDialog;
- * - tabella Pubblicazioni IRIS estratta in ui.component.PublicationsTableFactory;
- * - formatter dettagli pubblicazione/citazioni estratti in ui.formatter;
- * - ricerca professore limitata a identificativi reali;
- * - questa classe resta coordinatore UI principale.
+ * Responsabilità:
+ * - inizializzare i servizi tramite AppBootstrap;
+ * - costruire la scena principale dell'applicazione;
+ * - coordinare ricerca professore, pubblicazioni, citazioni, documenti citanti e BibTeX;
+ * - delegare dialog, formatter e componenti tabellari alle classi UI dedicate;
+ * - mantenere la schermata principale semplice e presentabile per la demo.
+ *
+ * Nota architetturale:
+ * questa classe non accede direttamente ai connector o ai repository concreti.
+ * Comunica con il layer applicativo tramite service e con la UI secondaria tramite dialog/componenti dedicati.
  */
 public class ProfessorPublicationsApp extends Application {
 
