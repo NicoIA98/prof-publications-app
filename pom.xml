@@ -11,11 +11,15 @@
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
+
         <javafx.version>21.0.4</javafx.version>
         <junit.version>5.10.2</junit.version>
-        <main.class>com.iadanza.profpublicationsapp.ProfessorPublicationsApp</main.class>
+
+        <!-- Main class tecnica per avvio da JAR/script -->
+        <main.class>com.iadanza.profpublicationsapp.Launcher</main.class>
     </properties>
 
     <dependencies>
@@ -71,6 +75,9 @@
     </dependencies>
 
     <build>
+        <!-- Nome finale del JAR principale -->
+        <finalName>prof-publications-app</finalName>
+
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -81,6 +88,7 @@
                 </configuration>
             </plugin>
 
+            <!-- Permette ancora l'avvio da IntelliJ/Maven con javafx:run -->
             <plugin>
                 <groupId>org.openjfx</groupId>
                 <artifactId>javafx-maven-plugin</artifactId>
@@ -88,6 +96,72 @@
                 <configuration>
                     <mainClass>${main.class}</mainClass>
                 </configuration>
+            </plugin>
+
+            <!-- Crea il JAR con Main-Class e Class-Path verso lib/ -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>3.4.2</version>
+                <configuration>
+                    <archive>
+                        <manifest>
+                            <mainClass>${main.class}</mainClass>
+                            <addClasspath>true</addClasspath>
+                            <classpathPrefix>lib/</classpathPrefix>
+                        </manifest>
+                    </archive>
+                </configuration>
+            </plugin>
+
+            <!-- Copia tutte le dipendenze runtime in target/dist/lib -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>3.7.1</version>
+                <executions>
+                    <execution>
+                        <id>copy-runtime-dependencies-to-dist</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>copy-dependencies</goal>
+                        </goals>
+                        <configuration>
+                            <includeScope>runtime</includeScope>
+                            <outputDirectory>${project.build.directory}/dist/lib</outputDirectory>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- Copia il JAR principale e gli script di avvio in target/dist -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <version>3.1.0</version>
+                <executions>
+                    <execution>
+                        <id>copy-distribution-files-to-dist</id>
+                        <phase>package</phase>
+                        <configuration>
+                            <target>
+                                <mkdir dir="${project.build.directory}/dist"/>
+
+                                <copy file="${project.build.directory}/${project.build.finalName}.jar"
+                                      tofile="${project.build.directory}/dist/prof-publications-app.jar"/>
+
+                                <copy file="${project.basedir}/src/main/distribution/run-app.bat"
+                                      tofile="${project.build.directory}/dist/run-app.bat"/>
+
+                                <copy file="${project.basedir}/src/main/distribution/README_AVVIO.md"
+                                      tofile="${project.build.directory}/dist/README_AVVIO.md"/>
+                            </target>
+                        </configuration>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
 
             <plugin>
