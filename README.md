@@ -35,7 +35,7 @@ Il progetto è stato sviluppato come applicazione Java 21 + JavaFX 21 + Maven, c
 Video dimostrativo dei principali casi d'uso dell'applicazione:
 
 ```text
-INSERIRE_LINK_VIDEO_DEMO
+https://drive.google.com/file/d/12B2IWwpAPi0wkhRWisO7wnefcbzypTtu/view
 ```
 
 Il video mostra:
